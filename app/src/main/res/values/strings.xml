@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Access Map</string>
+    <string name="action_settings">Settings</string>
+    <string name="accessToken">pk.eyJ1Ijoic2ZlbGtlciIsImEiOiJjaWc4d3VrNngwdDU3dGlrbmlqNjNvODNkIn0.mnEkd9giKxJBaeWvuu1Ixg</string>
+</resources>
