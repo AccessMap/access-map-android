@@ -15,17 +15,18 @@
     </com.mapbox.mapboxsdk.views.MapView>
 
     <EditText
-        android:id="@+id/address_text"
+        android:id="@+id/address_text_bar"
         android:layout_width="fill_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="60dp"
         android:inputType="text"
-        android:background="#ffffff" />
+        android:background="#ffffff"
+        android:focusable="false" />
 
     <Button android:id="@+id/address_search_button"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="Search"
-        android:layout_below="@+id/address_text"/>
+        android:layout_below="@+id/address_text_bar"/>
 
     <ImageButton android:id="@+id/zoom_in_button"
         android:layout_width="90dp"

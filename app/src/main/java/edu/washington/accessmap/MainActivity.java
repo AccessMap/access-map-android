@@ -32,12 +32,16 @@ import com.google.android.gms.common.api.GoogleApiClient;
 import com.google.android.gms.location.LocationListener;
 import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationServices;
+import com.google.android.gms.maps.model.Polyline;
 import com.mapbox.mapboxsdk.annotations.MarkerOptions;
+import com.mapbox.mapboxsdk.annotations.PolylineOptions;
 import com.mapbox.mapboxsdk.constants.Style;
 import com.mapbox.mapboxsdk.geometry.BoundingBox;
 import com.mapbox.mapboxsdk.geometry.LatLng;
 import com.mapbox.mapboxsdk.views.MapView;
 
+import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.BufferedInputStream;
@@ -48,6 +52,7 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
@@ -58,7 +63,6 @@ public class MainActivity extends AppCompatActivity implements
 
     private final static int CONNECTION_FAILURE_RESOLUTION_REQUEST = 9000;
     public static final String TAG = MainActivity.class.getSimpleName();
-    private static final int URL_LOADER = 0;
 
     private MapView mapView = null;
     private EditText addressText = null;
@@ -85,7 +89,8 @@ public class MainActivity extends AppCompatActivity implements
         mapView.setZoomLevel(11);
         mapView.onCreate(savedInstanceState);
 
-        addressText = (EditText) findViewById(R.id.address_text);
+        addressText = (EditText) findViewById(R.id.address_text_bar);
+        addressText.setOnClickListener(searchAddress);
 
         searchAddressButton = (Button) findViewById(R.id.address_search_button);
         searchAddressButton.setOnClickListener(searchButtonOnClickListener);
@@ -99,8 +104,45 @@ public class MainActivity extends AppCompatActivity implements
         geocoder = new Geocoder(this, Locale.ENGLISH);
 
         // run data queries in background
-        loadSidewalkData();
+        loadData();
     }
+
+    View.OnClickListener searchAddress = new View.OnClickListener() {
+        @Override
+        public void onClick(View arg0) {
+            System.out.println("StartingNewActivity!!!");
+            Intent searchAddress = new Intent(MainActivity.this, SearchAddressActivity.class);
+            MainActivity.this.startActivityForResult(searchAddress, 1);
+        }
+    };
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == 1) {
+            if (resultCode == Activity.RESULT_OK) {
+                Address selectedAddress = data.getExtras().getParcelable("SELECTED_ADDRESS");
+
+                String textAddress = "";
+                for (int i = 0; i < selectedAddress.getMaxAddressLineIndex(); i++) {
+                    textAddress += selectedAddress.getAddressLine(i) + ", ";
+                }
+                addressText.setText(textAddress);
+
+                try {
+                    LatLng searchedPosition = new LatLng(selectedAddress.getLatitude(), selectedAddress.getLongitude());
+                    mapView.addMarker(new MarkerOptions()
+                            .position(searchedPosition));
+                    mapView.setCenterCoordinate(searchedPosition, true);  // true animates change
+                } catch (IllegalStateException ise) {
+                    Toast.makeText(getApplicationContext(),
+                            "cannot resolve exact location of searched address",
+                            Toast.LENGTH_LONG).show();
+                }
+            } else if (resultCode == Activity.RESULT_CANCELED) {
+                //Write your code if there's no result
+            }
+        }
+    } //onActivityResult
 
     View.OnClickListener zoomInButtonOnClickListener = new View.OnClickListener() {
         @Override
@@ -292,9 +334,10 @@ public class MainActivity extends AppCompatActivity implements
         mapView.onSaveInstanceState(outState);
     }
 
-    public void loadSidewalkData() {
-        String urlString = "@string/api_url" + "/sidewalks.geojson";
-        new CallAccessMapAPI().execute(urlString);
+    public void loadData() {
+        String api_url = getString(R.string.api_url);
+        new CallAccessMapAPI().execute(api_url, "/curbs.geojson");
+        new CallAccessMapAPI().execute(api_url, "/sidewalks.geojson");
     }
 
     private class CallAccessMapAPI extends AsyncTask<String, String, JSONObject> {
@@ -303,7 +346,7 @@ public class MainActivity extends AppCompatActivity implements
         protected JSONObject doInBackground(String... params) {
             System.out.println("DOING IN BACKGROUND");
             Log.i(TAG, "DOING IN BACKGROUND");
-            String urlString = params[0];  // URL to call
+            String urlString = params[0] + params[1];  // URL to call
 
             JSONObject result = null;
 
@@ -311,10 +354,14 @@ public class MainActivity extends AppCompatActivity implements
             try {
 
                 String bbox = new BoundingBox(47.679446, -122.290313, 47.646978, -122.357879).toString();
+                bbox = "47.646978,-122.357879,47.679446,-122.290313";
+                System.out.println(bbox);
                 String charset = "UTF-8";
-                String query = String.format("bbox=%s", URLEncoder.encode(bbox, charset));
+                String query = String.format("bbox=%s", bbox); // URLEncoder.encode(bbox, charset));
 
                 URL url = new URL(urlString + "?" + query);
+                //URL url = new URL(urlString);
+                System.out.println(urlString + "?" + query);
                 HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
                 BufferedReader in = new BufferedReader( new InputStreamReader(urlConnection.getInputStream()));
 
@@ -331,6 +378,7 @@ public class MainActivity extends AppCompatActivity implements
                 Log.i(TAG, response.toString());
 
                 result = new JSONObject(response.toString());
+                result.put("class", params[1]);  // track data type
 
             } catch (Exception e ) {
                 System.out.println(e.getMessage());
@@ -347,7 +395,59 @@ public class MainActivity extends AppCompatActivity implements
             } else {
                 Log.i(TAG, "POST EXECUTE!!!");
                 System.out.println("We made it!");
+                try {
+                    switch (result.getString("class")) {
+                        case "/curbs.geojson":
+                            drawCurbs(result);
+                            break;
+                        case "/sidewalks.geojson":
+                            drawSidewalks(result);
+                            break;
+                    }
+                } catch (JSONException je) {
+                    Log.i(TAG, "JSON ERROR");
+                }
             }
         }
     }  // end CallAccessMapAPI
+
+    public void drawSidewalks(JSONObject sidewalkData) {
+        try {
+            JSONArray features = sidewalkData.getJSONArray("features");
+            List<PolylineOptions> polylines = new ArrayList<PolylineOptions>();
+            for (int i = 0; i < features.length(); i++) {
+                JSONObject feature = features.getJSONObject(i);
+                JSONObject geometry = feature.getJSONObject("geometry");
+                JSONArray coordinates = geometry.getJSONArray("coordinates");
+
+                LatLng latlngStart = convertToLatLng(coordinates.getJSONArray(0));
+                LatLng latlngEnd = convertToLatLng(coordinates.getJSONArray(1));
+                polylines.add(new PolylineOptions().add(latlngStart, latlngEnd));
+            }
+            mapView.addPolylines(polylines);
+        } catch (JSONException je) {
+            Log.i(TAG, "JSON ERROR");
+        }
+    }
+
+    public void drawCurbs(JSONObject curbData) {
+        try {
+            JSONArray features = curbData.getJSONArray("features");
+            List<MarkerOptions> markers = new ArrayList<MarkerOptions>();
+            for (int i = 0; i < features.length(); i++) {
+                JSONObject feature = features.getJSONObject(i);
+                JSONObject geometry = feature.getJSONObject("geometry");
+                JSONArray coordinates = geometry.getJSONArray("coordinates");
+                LatLng latlng = new LatLng(coordinates.getDouble(1), coordinates.getDouble(0));
+                markers.add(new MarkerOptions().position(latlng));
+            }
+            mapView.addMarkers(markers);
+        } catch (JSONException je) {
+            Log.i(TAG, "JSON ERROR");
+        }
+    }
+
+    private LatLng convertToLatLng(JSONArray coordinates) throws JSONException {
+        return new LatLng(coordinates.getDouble(1), coordinates.getDouble(0));
+    }
 }
