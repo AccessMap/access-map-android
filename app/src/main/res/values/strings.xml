@@ -4,4 +4,8 @@
     <string name="accessToken">pk.eyJ1Ijoic2ZlbGtlciIsImEiOiJjaWc4d3VrNngwdDU3dGlrbmlqNjNvODNkIn0.mnEkd9giKxJBaeWvuu1Ixg</string>
     <string name="api_url">http://hackcessibleapi.cs.washington.edu</string>
     <string name="title_activity_search_address">SearchAddressActivity</string>
+    <string-array name="feature_array">
+        <item>Elevation Change|/sidewalks.geojson|true</item>
+        <item>Curb Cuts|/curbs.geojson|false</item>
+    </string-array>
 </resources>

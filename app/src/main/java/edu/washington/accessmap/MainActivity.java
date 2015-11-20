@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.content.IntentSender;
 import android.content.Loader;
 import android.database.Cursor;
+import android.graphics.Color;
 import android.location.Address;
 import android.location.Geocoder;
 import android.location.Location;
@@ -16,6 +17,7 @@ import android.support.design.widget.Snackbar;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
 import android.util.Log;
+import android.view.Gravity;
 import android.view.View;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -33,6 +35,8 @@ import com.google.android.gms.location.LocationListener;
 import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.maps.model.Polyline;
+import com.mapbox.mapboxsdk.annotations.Annotation;
+import com.mapbox.mapboxsdk.annotations.Marker;
 import com.mapbox.mapboxsdk.annotations.MarkerOptions;
 import com.mapbox.mapboxsdk.annotations.PolylineOptions;
 import com.mapbox.mapboxsdk.constants.Style;
@@ -62,17 +66,27 @@ public class MainActivity extends AppCompatActivity implements
         LocationListener {
 
     private final static int CONNECTION_FAILURE_RESOLUTION_REQUEST = 9000;
+    private static final int DATA_ZOOM_LEVEL = 15;
     public static final String TAG = MainActivity.class.getSimpleName();
+
+    private static final double HIGH_GRADE = 0.0833;
+    private static final double MID_GRADE = 0.05;
 
     private MapView mapView = null;
     private EditText addressText = null;
-    private Button searchAddressButton = null;
+    private Button centerUserLocationButton = null;
     private ImageButton zoomOutButton = null;
     private ImageButton zoomInButton = null;
-    private List<Address> locationList;
     private GoogleApiClient mGoogleApiClient = null;
     private LocationRequest mLocationRequest = null;
-    private Geocoder geocoder = null;
+    private Marker userLocationMarker = null;
+    private Location userLastLocation = null;
+    private Marker lastSearchedAddressMarker = null;
+    private Address lastSearchedAddress = null;
+    private boolean handleAddressOnResume = false;
+    private LatLng lastCenterLocation = null;
+    private double lastZoomLevel = 17;
+    private boolean isFirstConnection = true;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -85,26 +99,26 @@ public class MainActivity extends AppCompatActivity implements
         /** Create a mapView and give it some properties */
         mapView = (MapView) findViewById(R.id.mapview);
         mapView.setStyleUrl(Style.MAPBOX_STREETS);
-        mapView.setCenterCoordinate(new LatLng(47.6, -122.3));
-        mapView.setZoomLevel(11);
+        lastCenterLocation = new LatLng(47.6, -122.3);
+        mapView.setCenterCoordinate(lastCenterLocation);
+        mapView.setZoomLevel(17);
+        mapView.setCompassGravity(Gravity.BOTTOM);
+        mapView.setLogoGravity(Gravity.RIGHT);
         mapView.onCreate(savedInstanceState);
+
+        mapView.addOnMapChangedListener(handleMapChange);
 
         addressText = (EditText) findViewById(R.id.address_text_bar);
         addressText.setOnClickListener(searchAddress);
 
-        searchAddressButton = (Button) findViewById(R.id.address_search_button);
-        searchAddressButton.setOnClickListener(searchButtonOnClickListener);
+        centerUserLocationButton = (Button) findViewById(R.id.center_user_location_button);
+        centerUserLocationButton.setOnClickListener(centerOnUserLocationButtonOnClickListener);
 
         zoomInButton = (ImageButton) findViewById(R.id.zoom_in_button);
         zoomInButton.setOnClickListener(zoomInButtonOnClickListener);
 
         zoomOutButton = (ImageButton) findViewById(R.id.zoom_out_button);
         zoomOutButton.setOnClickListener(zoomOutButtonOnClickListener);
-
-        geocoder = new Geocoder(this, Locale.ENGLISH);
-
-        // run data queries in background
-        loadData();
     }
 
     View.OnClickListener searchAddress = new View.OnClickListener() {
@@ -115,6 +129,58 @@ public class MainActivity extends AppCompatActivity implements
             MainActivity.this.startActivityForResult(searchAddress, 1);
         }
     };
+
+    MapView.OnMapChangedListener handleMapChange = new MapView.OnMapChangedListener() {
+        @Override
+        public void onMapChanged(int change) {
+            System.out.println("change: " + change);
+            double zoom = mapView.getZoomLevel();
+            LatLng centerCoordinate = mapView.getCenterCoordinate();
+
+            float computedDistance = computeDistance(centerCoordinate, lastCenterLocation);
+
+            if (lastZoomLevel >= 16 && zoom < 16) {
+                lastZoomLevel = zoom;
+                clearMap();
+            } else if (lastZoomLevel < 16 && zoom >= 16) {
+                lastZoomLevel = zoom;
+                loadData();
+            } else if (computedDistance > 200 && zoom >= 16) {
+                lastZoomLevel = zoom;
+                lastCenterLocation = centerCoordinate;
+                System.out.println("CHANGED REGION");
+
+                clearMap();
+                loadData();
+            }
+        }
+
+    };
+
+    // returns -1 on error otherwise meters between coordinates
+    private float computeDistance(LatLng one, LatLng two) {
+        float[] distanceArray = new float[1];
+        try {
+            Location.distanceBetween(one.getLatitude(), one.getLongitude(),
+                    two.getLatitude(), two.getLongitude(), distanceArray);
+            return distanceArray[0];
+        } catch (IllegalArgumentException iae) {
+            System.out.println("distanceBetween failed");
+            return -1;
+        }
+    }
+
+    // clears annotations from the map except searched and current location
+    private void clearMap() {
+        mapView.removeAllAnnotations();
+
+        if (userLocationMarker != null) {
+            mapView.addMarker(new MarkerOptions().position(userLocationMarker.getPosition()));
+        }
+        if (lastSearchedAddressMarker != null) {
+            mapView.addMarker(new MarkerOptions().position(lastSearchedAddressMarker.getPosition()));
+        }
+    }
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
@@ -127,17 +193,9 @@ public class MainActivity extends AppCompatActivity implements
                     textAddress += selectedAddress.getAddressLine(i) + ", ";
                 }
                 addressText.setText(textAddress);
-
-                try {
-                    LatLng searchedPosition = new LatLng(selectedAddress.getLatitude(), selectedAddress.getLongitude());
-                    mapView.addMarker(new MarkerOptions()
-                            .position(searchedPosition));
-                    mapView.setCenterCoordinate(searchedPosition, true);  // true animates change
-                } catch (IllegalStateException ise) {
-                    Toast.makeText(getApplicationContext(),
-                            "cannot resolve exact location of searched address",
-                            Toast.LENGTH_LONG).show();
-                }
+                lastSearchedAddress = selectedAddress;
+                handleAddressOnResume = true;
+                // onResume() is about to be called
             } else if (resultCode == Activity.RESULT_CANCELED) {
                 //Write your code if there's no result
             }
@@ -148,7 +206,15 @@ public class MainActivity extends AppCompatActivity implements
         @Override
         public void onClick(View arg0) {
             double currentZoomLevel = mapView.getZoomLevel();
-            mapView.setZoomLevel(currentZoomLevel + 1, true);  // animated zoom in
+            if (currentZoomLevel + 1 < MapView.MAXIMUM_ZOOM_LEVEL) {
+                mapView.setZoomLevel(currentZoomLevel + 1, true);  // animated zoom in
+            } else {
+                mapView.setZoomLevel(MapView.MAXIMUM_ZOOM_LEVEL, true);
+            }
+            lastZoomLevel = mapView.getZoomLevel();
+            if (lastZoomLevel >= 16) {
+                loadData();
+            }
         }
     };
 
@@ -156,72 +222,18 @@ public class MainActivity extends AppCompatActivity implements
         @Override
         public void onClick(View arg0) {
             double currentZoomLevel = mapView.getZoomLevel();
-            mapView.setZoomLevel(currentZoomLevel - 1, true);  // animated zoom in
+            mapView.setZoomLevel(currentZoomLevel - 1, true);  // animated zoom out
+            lastZoomLevel = mapView.getZoomLevel();
+            if (lastZoomLevel < 16) {
+                clearMap();
+            }
         }
     };
 
-    View.OnClickListener searchButtonOnClickListener = new View.OnClickListener(){
+    View.OnClickListener centerOnUserLocationButtonOnClickListener = new View.OnClickListener(){
         @Override
         public void onClick(View arg0) {
-            String locationName = addressText.getText().toString();
-
-            Toast.makeText(getApplicationContext(),
-                    "Search for: " + locationName,
-                    Toast.LENGTH_SHORT).show();
-
-            if (locationName == null) {
-                Toast.makeText(getApplicationContext(),
-                        "locationName == null",
-                        Toast.LENGTH_LONG).show();
-            } else {
-                try {
-                    locationList = geocoder.getFromLocationName(locationName, 1);
-
-                    if (locationList == null) {
-                        Toast.makeText(getApplicationContext(),
-                                "locationList == null",
-                                Toast.LENGTH_LONG).show();
-                    } else {
-                        if(locationList.isEmpty()){
-                            Toast.makeText(getApplicationContext(),
-                                    "locationList is empty",
-                                    Toast.LENGTH_LONG).show();
-                        } else {
-                            Toast.makeText(getApplicationContext(),
-                                    "number of result: " + locationList.size(),
-                                    Toast.LENGTH_LONG).show();
-
-                            for (Address a : locationList) {
-                                if (a.getFeatureName() == null) {
-                                    Toast.makeText(getApplicationContext(),
-                                            "search result unknown",
-                                            Toast.LENGTH_LONG).show();
-                                } else {
-                                    Toast.makeText(getApplicationContext(),
-                                            "address resolved to: " + a.getFeatureName(),
-                                            Toast.LENGTH_LONG).show();
-                                }
-
-                                try {
-                                    LatLng searchedPosition = new LatLng(a.getLatitude(), a.getLongitude());
-                                    mapView.addMarker(new MarkerOptions()
-                                            .position(searchedPosition));
-                                    mapView.setCenterCoordinate(searchedPosition, true);  // true animates change
-                                } catch (IllegalStateException ise) {
-                                    Toast.makeText(getApplicationContext(),
-                                            "cannot resolve exact location of searched address",
-                                            Toast.LENGTH_LONG).show();
-                                }
-                            }
-                        }
-                    }
-                } catch (IOException e) {
-                    Toast.makeText(getApplicationContext(),
-                            "network unavailable or any other I/O problem occurs" + locationName,
-                            Toast.LENGTH_LONG).show();
-                    e.printStackTrace();
-                }
-            }
+            handleNewLocation(userLastLocation, true);
         }
     };
 
@@ -243,29 +255,38 @@ public class MainActivity extends AppCompatActivity implements
     @Override
     public void onConnected(Bundle connectionHint) {
         Log.i(TAG, "Location services connected.");
-        Location mLastLocation = LocationServices.FusedLocationApi.getLastLocation(
+        userLastLocation = LocationServices.FusedLocationApi.getLastLocation(
                 mGoogleApiClient);
-        if (mLastLocation == null) {
+        if (userLastLocation == null) {
             LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, mLocationRequest, this);
-        }
-        else {
-            handleNewLocation(mLastLocation);
+        } else if (isFirstConnection) {
+            isFirstConnection = false;
+            handleNewLocation(userLastLocation, true);
+            loadData();
         }
     }
 
     @Override
     public void onLocationChanged(Location mLastLocation) {
-        handleNewLocation(mLastLocation);
+        userLastLocation = mLastLocation;
+        handleNewLocation(userLastLocation, false);
     }
 
-    private void handleNewLocation(Location mLastLocation) {
+    private void handleNewLocation(Location mLastLocation, boolean center) {
         Log.i(TAG, "handling new location");
         double currentLatitude = mLastLocation.getLatitude();
         double currentLongitude = mLastLocation.getLongitude();
         LatLng currentPosition = new LatLng(currentLatitude, currentLongitude);
-        mapView.addMarker(new MarkerOptions()
+        if (userLocationMarker != null) {
+            mapView.removeAnnotation(userLocationMarker);
+        }
+        // new userLocationMarker
+        userLocationMarker = mapView.addMarker(new MarkerOptions()
                 .position(currentPosition));
-        mapView.setCenterCoordinate(currentPosition);
+        if (center) {
+            mapView.setCenterCoordinate(currentPosition);
+            lastCenterLocation = currentPosition;
+        }
     }
 
     @Override
@@ -320,6 +341,28 @@ public class MainActivity extends AppCompatActivity implements
         super.onResume();
         mapView.onResume();
         mGoogleApiClient.connect();
+
+        if (handleAddressOnResume) {  // search address activity just finished
+            try {
+                if (lastSearchedAddressMarker != null) {
+                    mapView.removeAnnotation(lastSearchedAddressMarker);
+                }
+                LatLng searchedPosition = new LatLng(lastSearchedAddress.getLatitude(), lastSearchedAddress.getLongitude());
+                lastSearchedAddressMarker = mapView.addMarker(new MarkerOptions().position(searchedPosition));
+                mapView.setCenterCoordinate(searchedPosition);
+                System.out.println(mapView.getCenterCoordinate());
+                System.out.println(searchedPosition);
+                if (mapView.getCenterCoordinate() != searchedPosition) {
+                    System.out.println("I DOT KNOW WHATS HAPPENING");
+                }
+                System.out.println("should have changed the map location");
+            } catch (IllegalStateException ise) {
+                Toast.makeText(getApplicationContext(),
+                        "cannot resolve exact location of searched address",
+                        Toast.LENGTH_LONG).show();
+            }
+            handleAddressOnResume = false;
+        }
     }
 
     @Override
@@ -335,39 +378,63 @@ public class MainActivity extends AppCompatActivity implements
     }
 
     public void loadData() {
+        // TODO handle deleting old annotations
+        System.out.println("LOADING MORE DATA");
+        System.out.println(mapView.getCenterCoordinate());
+        String bounds = getDataBounds(mapView.getCenterCoordinate());
         String api_url = getString(R.string.api_url);
-        new CallAccessMapAPI().execute(api_url, "/curbs.geojson");
-        new CallAccessMapAPI().execute(api_url, "/sidewalks.geojson");
+        System.out.println("About to load data");
+        new CallAccessMapAPI().execute(api_url, "/curbs.geojson", bounds);
+        new CallAccessMapAPI().execute(api_url, "/sidewalks.geojson", bounds);
+    }
+
+    // always get bounds for zoom level 15 and higher
+    // format = botom left long, bottom left lat, top right long, top right lat
+    public String getDataBounds(LatLng centerCoordinate) {
+        double longitude = centerCoordinate.getLongitude();
+        double latitude = centerCoordinate.getLatitude();
+        return (longitude - .003) + "," + (latitude - .003) + "," + (longitude + .003) + "," + (latitude + .003);
+        // +- .01 at Longitute
+        // +- .01 Latitude
+        // aproximate zoom level 15 bounds
     }
 
     private class CallAccessMapAPI extends AsyncTask<String, String, JSONObject> {
 
         @Override
         protected JSONObject doInBackground(String... params) {
-            System.out.println("DOING IN BACKGROUND");
             Log.i(TAG, "DOING IN BACKGROUND");
             String urlString = params[0] + params[1];  // URL to call
-
+            String bounds = params[2];
             JSONObject result = null;
 
             // HTTP Get
             try {
 
-                String bbox = new BoundingBox(47.679446, -122.290313, 47.646978, -122.357879).toString();
-                bbox = "47.646978,-122.357879,47.679446,-122.290313";
+                String bbox = "-122.357879,47.646978,-122.348556,47.655709";
                 System.out.println(bbox);
+                System.out.println(bounds);
                 String charset = "UTF-8";
-                String query = String.format("bbox=%s", bbox); // URLEncoder.encode(bbox, charset));
+                String query = String.format("bbox=%s", bounds); // URLEncoder.encode(bbox, charset));
 
                 URL url = new URL(urlString + "?" + query);
                 //URL url = new URL(urlString);
                 System.out.println(urlString + "?" + query);
                 HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
+                if (urlConnection == null) {
+                    System.out.println("we have a problem");
+                }
                 BufferedReader in = new BufferedReader( new InputStreamReader(urlConnection.getInputStream()));
+
+                if (in == null) {
+                    System.out.println("we have another problem");
+                }
+                System.out.println("here");
 
                 String inputLine;
                 StringBuffer response = new StringBuffer();
 
+                System.out.println("wassup");
                 while ((inputLine = in.readLine()) != null) {
                     response.append(inputLine);
                 }
@@ -419,11 +486,19 @@ public class MainActivity extends AppCompatActivity implements
                 JSONObject feature = features.getJSONObject(i);
                 JSONObject geometry = feature.getJSONObject("geometry");
                 JSONArray coordinates = geometry.getJSONArray("coordinates");
-
                 LatLng latlngStart = convertToLatLng(coordinates.getJSONArray(0));
                 LatLng latlngEnd = convertToLatLng(coordinates.getJSONArray(1));
-                polylines.add(new PolylineOptions().add(latlngStart, latlngEnd));
+                double grade = feature.getJSONObject("properties").getDouble("grade");
+                if (grade > HIGH_GRADE) {
+                    polylines.add(new PolylineOptions().add(latlngStart, latlngEnd).width(2).color(Color.parseColor("#012900")));
+                } else if (grade > MID_GRADE) {
+                    polylines.add(new PolylineOptions().add(latlngStart, latlngEnd).width(2).color(Color.parseColor("#029400")));
+                } else {  // LOW_GRADE
+                    polylines.add(new PolylineOptions().add(latlngStart, latlngEnd).width(2).color(Color.parseColor("#06f902")));
+                }
             }
+
+            System.out.println("About to draw sidewalks");
             mapView.addPolylines(polylines);
         } catch (JSONException je) {
             Log.i(TAG, "JSON ERROR");
@@ -439,8 +514,10 @@ public class MainActivity extends AppCompatActivity implements
                 JSONObject geometry = feature.getJSONObject("geometry");
                 JSONArray coordinates = geometry.getJSONArray("coordinates");
                 LatLng latlng = new LatLng(coordinates.getDouble(1), coordinates.getDouble(0));
-                markers.add(new MarkerOptions().position(latlng));
+                markers.add(new MarkerOptions().position(latlng).sprite("circle-11"));  // "circle-11"
             }
+
+            System.out.println("About to draw curbs");
             mapView.addMarkers(markers);
         } catch (JSONException je) {
             Log.i(TAG, "JSON ERROR");
