@@ -6,6 +6,7 @@
     <string name="title_activity_search_address">SearchAddressActivity</string>
     <string-array name="feature_array">
         <item>Elevation Change|/sidewalks.geojson|true</item>
-        <item>Curb Cuts|/curbs.geojson|false</item>
+        <item>Curb Cuts|/curbs.geojson|true</item>
+        <item>Construction Permits|/permits.geojson|true</item>
     </string-array>
 </resources>

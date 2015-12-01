@@ -1,10 +1,12 @@
 package edu.washington.accessmap;
 
 import android.app.Dialog;
+import android.app.DialogFragment;
 import android.app.LoaderManager;
 import android.content.Intent;
 import android.content.IntentSender;
 import android.content.Loader;
+import android.content.res.Resources;
 import android.database.Cursor;
 import android.graphics.Color;
 import android.location.Address;
@@ -66,7 +68,8 @@ public class MainActivity extends AppCompatActivity implements
         LocationListener {
 
     private final static int CONNECTION_FAILURE_RESOLUTION_REQUEST = 9000;
-    private static final int DATA_ZOOM_LEVEL = 15;
+    private static final int DATA_ZOOM_LEVEL = 16;
+    private static final float CHANGE_DATA_DISTANCE = 200;
     public static final String TAG = MainActivity.class.getSimpleName();
 
     private static final double HIGH_GRADE = 0.0833;
@@ -77,6 +80,8 @@ public class MainActivity extends AppCompatActivity implements
     private Button centerUserLocationButton = null;
     private ImageButton zoomOutButton = null;
     private ImageButton zoomInButton = null;
+    private Button adjustFeaturesButton = null;
+
     private GoogleApiClient mGoogleApiClient = null;
     private LocationRequest mLocationRequest = null;
     private Marker userLocationMarker = null;
@@ -86,7 +91,10 @@ public class MainActivity extends AppCompatActivity implements
     private boolean handleAddressOnResume = false;
     private LatLng lastCenterLocation = null;
     private double lastZoomLevel = 17;
-    private boolean isFirstConnection = true;
+    private boolean isFirstConnection = true;  // could try to remove that code form onResume()
+
+    // private MapFeatureState mapFeatureState = null;
+    private static MapFeature[] mapFeatureState = null;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -96,7 +104,7 @@ public class MainActivity extends AppCompatActivity implements
         buildGoogleApiClient();
         buildLocationRequest();
 
-        /** Create a mapView and give it some properties */
+        /** Instanciate MapView and properties */
         mapView = (MapView) findViewById(R.id.mapview);
         mapView.setStyleUrl(Style.MAPBOX_STREETS);
         lastCenterLocation = new LatLng(47.6, -122.3);
@@ -105,7 +113,6 @@ public class MainActivity extends AppCompatActivity implements
         mapView.setCompassGravity(Gravity.BOTTOM);
         mapView.setLogoGravity(Gravity.RIGHT);
         mapView.onCreate(savedInstanceState);
-
         mapView.addOnMapChangedListener(handleMapChange);
 
         addressText = (EditText) findViewById(R.id.address_text_bar);
@@ -119,6 +126,20 @@ public class MainActivity extends AppCompatActivity implements
 
         zoomOutButton = (ImageButton) findViewById(R.id.zoom_out_button);
         zoomOutButton.setOnClickListener(zoomOutButtonOnClickListener);
+
+        // build map feature state tracker
+        Resources res = getResources();
+        String[] featureResources = res.getStringArray(R.array.feature_array);
+        mapFeatureState = new MapFeature[featureResources.length];
+        for (int i = 0; i < featureResources.length; i++) {
+            System.out.println(featureResources[i]);
+            String[] results = featureResources[i].split("\\|");
+            System.out.println(results[0] + " " + results[1] + " " + results[2]);
+            mapFeatureState[i] = new MapFeature(results[0], results[1], Boolean.valueOf(results[2]));
+        }
+
+        adjustFeaturesButton = (Button) findViewById(R.id.adjust_features_button);
+        adjustFeaturesButton.setOnClickListener(adjustFeaturesButtonOnClickListener);
     }
 
     View.OnClickListener searchAddress = new View.OnClickListener() {
@@ -139,13 +160,13 @@ public class MainActivity extends AppCompatActivity implements
 
             float computedDistance = computeDistance(centerCoordinate, lastCenterLocation);
 
-            if (lastZoomLevel >= 16 && zoom < 16) {
+            if (lastZoomLevel >= DATA_ZOOM_LEVEL && zoom < DATA_ZOOM_LEVEL) {
                 lastZoomLevel = zoom;
                 clearMap();
-            } else if (lastZoomLevel < 16 && zoom >= 16) {
+            } else if (lastZoomLevel < DATA_ZOOM_LEVEL && zoom >= DATA_ZOOM_LEVEL) {
                 lastZoomLevel = zoom;
                 loadData();
-            } else if (computedDistance > 200 && zoom >= 16) {
+            } else if (computedDistance > CHANGE_DATA_DISTANCE && zoom >= DATA_ZOOM_LEVEL) {
                 lastZoomLevel = zoom;
                 lastCenterLocation = centerCoordinate;
                 System.out.println("CHANGED REGION");
@@ -212,7 +233,7 @@ public class MainActivity extends AppCompatActivity implements
                 mapView.setZoomLevel(MapView.MAXIMUM_ZOOM_LEVEL, true);
             }
             lastZoomLevel = mapView.getZoomLevel();
-            if (lastZoomLevel >= 16) {
+            if (lastZoomLevel >= DATA_ZOOM_LEVEL) {
                 loadData();
             }
         }
@@ -224,11 +245,30 @@ public class MainActivity extends AppCompatActivity implements
             double currentZoomLevel = mapView.getZoomLevel();
             mapView.setZoomLevel(currentZoomLevel - 1, true);  // animated zoom out
             lastZoomLevel = mapView.getZoomLevel();
-            if (lastZoomLevel < 16) {
+            if (lastZoomLevel < DATA_ZOOM_LEVEL) {
                 clearMap();
             }
         }
     };
+
+    View.OnClickListener adjustFeaturesButtonOnClickListener = new View.OnClickListener(){
+        @Override
+        public void onClick(View arg0) {
+            DialogFragment featureAdjuster = new FeatureAdjuster();
+
+            // Supply num input as an argument.
+            Bundle args = new Bundle();
+            args.putParcelableArray("MAP_FEATURES_STATE", mapFeatureState);
+            featureAdjuster.setArguments(args);
+
+            featureAdjuster.show(getFragmentManager(), "adjust_features");
+
+        }
+    };
+
+    public static void setMapFeatures(MapFeature[] newFeatureSelection) {
+        mapFeatureState = newFeatureSelection;
+    }
 
     View.OnClickListener centerOnUserLocationButtonOnClickListener = new View.OnClickListener(){
         @Override
@@ -236,6 +276,7 @@ public class MainActivity extends AppCompatActivity implements
             handleNewLocation(userLastLocation, true);
         }
     };
+
 
     protected synchronized void buildGoogleApiClient() {
         mGoogleApiClient = new GoogleApiClient.Builder(this)
@@ -384,8 +425,11 @@ public class MainActivity extends AppCompatActivity implements
         String bounds = getDataBounds(mapView.getCenterCoordinate());
         String api_url = getString(R.string.api_url);
         System.out.println("About to load data");
-        new CallAccessMapAPI().execute(api_url, "/curbs.geojson", bounds);
-        new CallAccessMapAPI().execute(api_url, "/sidewalks.geojson", bounds);
+        for (MapFeature mapFeature : mapFeatureState) {
+            if (mapFeature.isVisible()) {
+                new CallAccessMapAPI().execute(api_url, mapFeature.getUrl(), bounds);
+            }
+        }
     }
 
     // always get bounds for zoom level 15 and higher
@@ -508,6 +552,25 @@ public class MainActivity extends AppCompatActivity implements
     public void drawCurbs(JSONObject curbData) {
         try {
             JSONArray features = curbData.getJSONArray("features");
+            List<MarkerOptions> markers = new ArrayList<MarkerOptions>();
+            for (int i = 0; i < features.length(); i++) {
+                JSONObject feature = features.getJSONObject(i);
+                JSONObject geometry = feature.getJSONObject("geometry");
+                JSONArray coordinates = geometry.getJSONArray("coordinates");
+                LatLng latlng = new LatLng(coordinates.getDouble(1), coordinates.getDouble(0));
+                markers.add(new MarkerOptions().position(latlng).sprite("circle-11"));  // "circle-11"
+            }
+
+            System.out.println("About to draw curbs");
+            mapView.addMarkers(markers);
+        } catch (JSONException je) {
+            Log.i(TAG, "JSON ERROR");
+        }
+    }
+
+    public void drawPermits(JSONObject permitData) {
+        try {
+            JSONArray features = permitData.getJSONArray("features");
             List<MarkerOptions> markers = new ArrayList<MarkerOptions>();
             for (int i = 0; i < features.length(); i++) {
                 JSONObject feature = features.getJSONObject(i);

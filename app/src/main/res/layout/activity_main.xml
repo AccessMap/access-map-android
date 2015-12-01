@@ -42,4 +42,10 @@
         android:src="@drawable/zoom_out_button"
         android:layout_below="@+id/zoom_in_button"/>
 
+    <Button android:id="@+id/adjust_features_button"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Features"
+        android:layout_below="@+id/zoom_out_button"/>
+
 </RelativeLayout>

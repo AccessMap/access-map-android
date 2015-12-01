@@ -1,9 +1,12 @@
 package edu.washington.accessmap;
 
+import android.os.Parcel;
+import android.os.Parcelable;
+
 /**
  * Created by samuelfelker on 11/19/15.
  */
-public class MapFeatureState {
+public class MapFeatureState{
     MapFeature[] features;
 
     public MapFeatureState(String[] featureResources) {
