@@ -32,6 +32,11 @@
                 android:name="android.support.PARENT_ACTIVITY"
                 android:value="edu.washington.accessmap.MainActivity" />
         </activity>
+        <activity
+            android:name=".Routing"
+            android:label="@string/title_activity_routing"
+            android:theme="@style/AppTheme.NoActionBar" >
+        </activity>
     </application>
 
 </manifest>

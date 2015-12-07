@@ -23,14 +23,21 @@ import com.mapbox.mapboxsdk.geometry.LatLng;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.Timer;
+import java.util.TimerTask;
 
 public class SearchAddressActivity extends Activity {
     private ListView listView = null;
     private EditText addressText = null;
     private Geocoder geocoder = null;
     private List<Address> locationList = null;
+    private double lowerLeftLat = 0;
+    private double lowerLeftLong = 0;
+    private double upperRightLat = 0;
+    private double upperRightLong = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -41,8 +48,15 @@ public class SearchAddressActivity extends Activity {
         listView = (ListView) findViewById(R.id.address_options);
         geocoder = new Geocoder(this, Locale.ENGLISH);
 
+        lowerLeftLat = Double.parseDouble(getString(R.string.lower_left_lat));
+        lowerLeftLong = Double.parseDouble(getString(R.string.lower_left_long));
+        upperRightLat = Double.parseDouble(getString(R.string.upper_right_lat));
+        upperRightLong = Double.parseDouble(getString(R.string.upper_right_long));
+
         // detect changed text and get new address options
         addressText.addTextChangedListener(new TextWatcher() {
+            private long lastSearch = 01;
+            private long DELAY = 500;  // in ms
 
             @Override
             public void afterTextChanged(Editable s) {
@@ -56,41 +70,24 @@ public class SearchAddressActivity extends Activity {
 
             @Override
             public void onTextChanged(CharSequence s, int start, int before, int count) {
-                String locationName = addressText.getText().toString();
-
-                if (locationName == null) {
-                    Toast.makeText(getApplicationContext(),
-                            "locationName == null",
-                            Toast.LENGTH_LONG).show();
-                } else {
+                if (s.length() >= 3 && (System.currentTimeMillis() - lastSearch > DELAY)) {
+                    lastSearch = System.currentTimeMillis();
+                    String locationName = addressText.getText().toString();
                     try {
-                        locationList = geocoder.getFromLocationName(locationName, 5);
+                        locationList = geocoder.getFromLocationName(
+                                locationName, 5, lowerLeftLat, lowerLeftLong, upperRightLat, upperRightLong);
 
-                        if (locationList == null) {
-                            Toast.makeText(getApplicationContext(),
-                                    "locationList == null",
-                                    Toast.LENGTH_LONG).show();
-                        } else {  // we have some input
-                            if (locationList.isEmpty()) {
-                                Toast.makeText(getApplicationContext(),
-                                        "locationList is empty",
-                                        Toast.LENGTH_LONG).show();
-                            } else {  // we have location results
+                        if (!locationList.isEmpty()) { // we have location results
 
-                                // build string version of addresses for listView
-                                List<String> locationStrings = new ArrayList<String>();
-                                for (Address a : locationList) {
-                                    String textAddress = "";
-                                    for (int i = 0; i < a.getMaxAddressLineIndex(); i++) {
-                                        textAddress += a.getAddressLine(i) + ", ";
-                                    }
-                                    locationStrings.add(textAddress);
-                                }
-
-                                ArrayAdapter adapter = new ArrayAdapter<String>(getApplicationContext(),
-                                        android.R.layout.simple_list_item_1, locationStrings);
-                                listView.setAdapter(adapter);
+                            // build string version of addresses for listView
+                            List<String> locationStrings = new ArrayList<String>();
+                            for (Address a : locationList) {
+                                locationStrings.add(DataHelper.extractAddressText(a));
                             }
+
+                            ArrayAdapter adapter = new ArrayAdapter<String>(getApplicationContext(),
+                                    android.R.layout.simple_list_item_1, locationStrings);
+                            listView.setAdapter(adapter);
                         }
                     } catch (IOException e) {
                         Toast.makeText(getApplicationContext(),

@@ -4,9 +4,82 @@
     <string name="accessToken">pk.eyJ1Ijoic2ZlbGtlciIsImEiOiJjaWc4d3VrNngwdDU3dGlrbmlqNjNvODNkIn0.mnEkd9giKxJBaeWvuu1Ixg</string>
     <string name="api_url">http://hackcessibleapi.cs.washington.edu</string>
     <string name="title_activity_search_address">SearchAddressActivity</string>
+    <string name="lower_left_lat">47.484533</string>
+    <string name="lower_left_long">-122.439599</string>
+    <string name="upper_right_lat">47.761581</string>
+    <string name="upper_right_long">-122.224940</string>
     <string-array name="feature_array">
         <item>Elevation Change|/sidewalks.geojson|true</item>
         <item>Curb Cuts|/curbs.geojson|true</item>
         <item>Construction Permits|/permits.geojson|true</item>
     </string-array>
+    <string name="route_manual_json">{"type":"FeatureCollection",
+"features": [
+{
+"geometry": {
+"type": "LineString",
+"coordinates": [
+[
+-122.343979,47.662936
+],
+[
+-122.342211,47.662954
+]
+]
+}
+},
+{
+"geometry": {
+"type": "LineString",
+"coordinates": [
+[
+-122.342211,47.662954
+],
+[
+-122.342191,47.662058
+]
+]
+}
+},
+{
+"geometry": {
+"type": "LineString",
+"coordinates": [
+[
+-122.342191,47.662058
+
+],
+[
+-122.340740,47.662045
+]
+]
+}
+},
+{
+"geometry": {
+"type": "LineString",
+"coordinates": [
+[
+-122.340740,47.662045
+],
+[
+-122.340760,47.661470
+]
+]
+}
+},
+{
+"geometry": {
+"type": "LineString",
+"coordinates": [
+[
+-122.340760,47.661470
+],
+[
+-122.340471,47.661456
+]
+]
+}
+}]}</string>
+    <string name="title_activity_routing">Routing</string>
 </resources>

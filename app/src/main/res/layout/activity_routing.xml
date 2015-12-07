@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools" android:layout_width="match_parent"
+    android:layout_height="match_parent" android:fitsSystemWindows="true"
+    tools:context="edu.washington.accessmap.Routing">
+
+    <EditText
+        android:id="@+id/from_address"
+        android:layout_width="fill_parent"
+        android:layout_marginLeft="15dp"
+        android:layout_marginRight="15dp"
+        android:layout_marginTop="15dp"
+        android:layout_height="60dp"
+        android:inputType="text"
+        android:background="#ffffff"
+        android:hint=" Select From Address:"
+        android:focusable="false"/>
+
+    <EditText
+        android:id="@+id/to_address"
+        android:layout_width="fill_parent"
+        android:layout_height="60dp"
+        android:layout_marginLeft="15dp"
+        android:layout_marginRight="15dp"
+        android:layout_marginTop="15dp"
+        android:inputType="text"
+        android:background="#ffffff"
+        android:layout_below="@+id/from_address"
+        android:hint=" Select Destination Address:"
+        android:focusable="false"/>
+
+    <RadioGroup
+        android:id="@+id/mobility_radio_group"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_centerHorizontal="true"
+        android:layout_below="@+id/to_address"
+        android:layout_marginTop="15dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="25dp"
+            android:layout_marginTop="10dp"
+            android:textSize="30px"
+            android:textAlignment="center"
+            android:text="Select Mobility" />
+
+        <RadioButton android:id="@+id/rad1"
+            android:text="Manual Wheelchair"
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:textSize="24px"
+            android:checked="true"
+            android:layout_marginLeft="15dp"></RadioButton>
+        <RadioButton android:id="@+id/rad2"
+            android:text="Motorized Wheelchair"
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:textSize="24px"
+            android:layout_marginLeft="15dp"></RadioButton>
+        <RadioButton android:id="@+id/rad3"
+            android:text="Limited Mobility"
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:textSize="24px"
+            android:layout_marginLeft="15dp"></RadioButton>
+    </RadioGroup>
+
+    <Button
+        android:id="@+id/execute_route_search_button"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="15dp"
+        android:text="Find Route"
+        android:layout_centerHorizontal="true"
+        android:layout_below="@+id/mobility_radio_group" />
+
+</RelativeLayout>

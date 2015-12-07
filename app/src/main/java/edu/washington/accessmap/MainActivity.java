@@ -3,6 +3,7 @@ package edu.washington.accessmap;
 import android.app.Dialog;
 import android.app.DialogFragment;
 import android.app.LoaderManager;
+import android.content.Context;
 import android.content.Intent;
 import android.content.IntentSender;
 import android.content.Loader;
@@ -12,8 +13,12 @@ import android.graphics.Color;
 import android.location.Address;
 import android.location.Geocoder;
 import android.location.Location;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkInfo;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.provider.Telephony;
 import android.support.design.widget.FloatingActionButton;
 import android.support.design.widget.Snackbar;
 import android.support.v7.app.AppCompatActivity;
@@ -68,32 +73,20 @@ public class MainActivity extends AppCompatActivity implements
         LocationListener {
 
     private final static int CONNECTION_FAILURE_RESOLUTION_REQUEST = 9000;
-    private static final int DATA_ZOOM_LEVEL = 16;
-    private static final float CHANGE_DATA_DISTANCE = 200;
+    public static final int DATA_ZOOM_LEVEL = 16;
+    public static final float CHANGE_DATA_DISTANCE = 200;
     public static final String TAG = MainActivity.class.getSimpleName();
 
-    private static final double HIGH_GRADE = 0.0833;
-    private static final double MID_GRADE = 0.05;
-
-    private MapView mapView = null;
+    public MapView mapView = null;
     private EditText addressText = null;
     private Button centerUserLocationButton = null;
     private ImageButton zoomOutButton = null;
     private ImageButton zoomInButton = null;
     private Button adjustFeaturesButton = null;
-
+    private Button routeButton = null;
     private GoogleApiClient mGoogleApiClient = null;
     private LocationRequest mLocationRequest = null;
-    private Marker userLocationMarker = null;
-    private Location userLastLocation = null;
-    private Marker lastSearchedAddressMarker = null;
-    private Address lastSearchedAddress = null;
-    private boolean handleAddressOnResume = false;
-    private LatLng lastCenterLocation = null;
-    private double lastZoomLevel = 17;
-    private boolean isFirstConnection = true;  // could try to remove that code form onResume()
-
-    // private MapFeatureState mapFeatureState = null;
+    private MapStateTracker mapTracker = null;
     private static MapFeature[] mapFeatureState = null;
 
     @Override
@@ -104,15 +97,19 @@ public class MainActivity extends AppCompatActivity implements
         buildGoogleApiClient();
         buildLocationRequest();
 
+        mapTracker = new MapStateTracker();
+
         /** Instanciate MapView and properties */
         mapView = (MapView) findViewById(R.id.mapview);
         mapView.setStyleUrl(Style.MAPBOX_STREETS);
-        lastCenterLocation = new LatLng(47.6, -122.3);
-        mapView.setCenterCoordinate(lastCenterLocation);
-        mapView.setZoomLevel(17);
+        mapTracker.setLastCenterLocation(new LatLng(47.6, -122.3));
+        mapView.setCenterCoordinate(mapTracker.getLastCenterLocation());
+        mapView.setZoomLevel(DATA_ZOOM_LEVEL);
         mapView.setCompassGravity(Gravity.BOTTOM);
         mapView.setLogoGravity(Gravity.RIGHT);
         mapView.onCreate(savedInstanceState);
+
+        // User Interface Listeners
         mapView.addOnMapChangedListener(handleMapChange);
 
         addressText = (EditText) findViewById(R.id.address_text_bar);
@@ -127,7 +124,13 @@ public class MainActivity extends AppCompatActivity implements
         zoomOutButton = (ImageButton) findViewById(R.id.zoom_out_button);
         zoomOutButton.setOnClickListener(zoomOutButtonOnClickListener);
 
-        // build map feature state tracker
+        adjustFeaturesButton = (Button) findViewById(R.id.adjust_features_button);
+        adjustFeaturesButton.setOnClickListener(adjustFeaturesButtonOnClickListener);
+
+        routeButton = (Button) findViewById(R.id.route_button);
+        routeButton.setOnClickListener(routeButtonOnClickListener);
+
+        // Instanciate Map Feature Preference Tracker
         Resources res = getResources();
         String[] featureResources = res.getStringArray(R.array.feature_array);
         mapFeatureState = new MapFeature[featureResources.length];
@@ -138,8 +141,8 @@ public class MainActivity extends AppCompatActivity implements
             mapFeatureState[i] = new MapFeature(results[0], results[1], Boolean.valueOf(results[2]));
         }
 
-        adjustFeaturesButton = (Button) findViewById(R.id.adjust_features_button);
-        adjustFeaturesButton.setOnClickListener(adjustFeaturesButtonOnClickListener);
+        // Alert User if no Network Connection
+        checkWifi();
     }
 
     View.OnClickListener searchAddress = new View.OnClickListener() {
@@ -154,74 +157,26 @@ public class MainActivity extends AppCompatActivity implements
     MapView.OnMapChangedListener handleMapChange = new MapView.OnMapChangedListener() {
         @Override
         public void onMapChanged(int change) {
-            System.out.println("change: " + change);
             double zoom = mapView.getZoomLevel();
             LatLng centerCoordinate = mapView.getCenterCoordinate();
+            float computedDistance = computeDistance(centerCoordinate, mapTracker.getLastCenterLocation());
 
-            float computedDistance = computeDistance(centerCoordinate, lastCenterLocation);
-
-            if (lastZoomLevel >= DATA_ZOOM_LEVEL && zoom < DATA_ZOOM_LEVEL) {
-                lastZoomLevel = zoom;
-                clearMap();
-            } else if (lastZoomLevel < DATA_ZOOM_LEVEL && zoom >= DATA_ZOOM_LEVEL) {
-                lastZoomLevel = zoom;
+            if (mapTracker.getLastZoomLevel() >= DATA_ZOOM_LEVEL && zoom < DATA_ZOOM_LEVEL) {
+                mapTracker.setLastZoomLevel(zoom);
+                MapArtist.clearMap(mapView, mapTracker);
+            } else if (mapTracker.getLastZoomLevel() < DATA_ZOOM_LEVEL && zoom >= DATA_ZOOM_LEVEL) {
+                mapTracker.setLastZoomLevel(zoom);
                 loadData();
             } else if (computedDistance > CHANGE_DATA_DISTANCE && zoom >= DATA_ZOOM_LEVEL) {
-                lastZoomLevel = zoom;
-                lastCenterLocation = centerCoordinate;
+                mapTracker.setLastZoomLevel(zoom);
+                mapTracker.setLastCenterLocation(centerCoordinate);
                 System.out.println("CHANGED REGION");
-
-                clearMap();
+                MapArtist.clearMap(mapView, mapTracker);
                 loadData();
             }
         }
 
     };
-
-    // returns -1 on error otherwise meters between coordinates
-    private float computeDistance(LatLng one, LatLng two) {
-        float[] distanceArray = new float[1];
-        try {
-            Location.distanceBetween(one.getLatitude(), one.getLongitude(),
-                    two.getLatitude(), two.getLongitude(), distanceArray);
-            return distanceArray[0];
-        } catch (IllegalArgumentException iae) {
-            System.out.println("distanceBetween failed");
-            return -1;
-        }
-    }
-
-    // clears annotations from the map except searched and current location
-    private void clearMap() {
-        mapView.removeAllAnnotations();
-
-        if (userLocationMarker != null) {
-            mapView.addMarker(new MarkerOptions().position(userLocationMarker.getPosition()));
-        }
-        if (lastSearchedAddressMarker != null) {
-            mapView.addMarker(new MarkerOptions().position(lastSearchedAddressMarker.getPosition()));
-        }
-    }
-
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        if (requestCode == 1) {
-            if (resultCode == Activity.RESULT_OK) {
-                Address selectedAddress = data.getExtras().getParcelable("SELECTED_ADDRESS");
-
-                String textAddress = "";
-                for (int i = 0; i < selectedAddress.getMaxAddressLineIndex(); i++) {
-                    textAddress += selectedAddress.getAddressLine(i) + ", ";
-                }
-                addressText.setText(textAddress);
-                lastSearchedAddress = selectedAddress;
-                handleAddressOnResume = true;
-                // onResume() is about to be called
-            } else if (resultCode == Activity.RESULT_CANCELED) {
-                //Write your code if there's no result
-            }
-        }
-    } //onActivityResult
 
     View.OnClickListener zoomInButtonOnClickListener = new View.OnClickListener() {
         @Override
@@ -232,8 +187,8 @@ public class MainActivity extends AppCompatActivity implements
             } else {
                 mapView.setZoomLevel(MapView.MAXIMUM_ZOOM_LEVEL, true);
             }
-            lastZoomLevel = mapView.getZoomLevel();
-            if (lastZoomLevel >= DATA_ZOOM_LEVEL) {
+            mapTracker.setLastZoomLevel(currentZoomLevel);
+            if (currentZoomLevel >= DATA_ZOOM_LEVEL) {
                 loadData();
             }
         }
@@ -244,9 +199,9 @@ public class MainActivity extends AppCompatActivity implements
         public void onClick(View arg0) {
             double currentZoomLevel = mapView.getZoomLevel();
             mapView.setZoomLevel(currentZoomLevel - 1, true);  // animated zoom out
-            lastZoomLevel = mapView.getZoomLevel();
-            if (lastZoomLevel < DATA_ZOOM_LEVEL) {
-                clearMap();
+            mapTracker.setLastZoomLevel(currentZoomLevel);
+            if (currentZoomLevel < DATA_ZOOM_LEVEL) {
+                MapArtist.clearMap(mapView, mapTracker);
             }
         }
     };
@@ -255,16 +210,23 @@ public class MainActivity extends AppCompatActivity implements
         @Override
         public void onClick(View arg0) {
             DialogFragment featureAdjuster = new FeatureAdjuster();
-
-            // Supply num input as an argument.
             Bundle args = new Bundle();
             args.putParcelableArray("MAP_FEATURES_STATE", mapFeatureState);
             featureAdjuster.setArguments(args);
-
             featureAdjuster.show(getFragmentManager(), "adjust_features");
-
         }
     };
+
+    View.OnClickListener routeButtonOnClickListener = new View.OnClickListener(){
+        @Override
+        public void onClick(View arg0) {
+            // temporary bypassing of interface and api call
+            Intent routeSearch = new Intent(MainActivity.this, Routing.class);
+            MainActivity.this.startActivityForResult(routeSearch, 2);
+        }
+    };
+
+
 
     public static void setMapFeatures(MapFeature[] newFeatureSelection) {
         mapFeatureState = newFeatureSelection;
@@ -273,10 +235,12 @@ public class MainActivity extends AppCompatActivity implements
     View.OnClickListener centerOnUserLocationButtonOnClickListener = new View.OnClickListener(){
         @Override
         public void onClick(View arg0) {
-            handleNewLocation(userLastLocation, true);
+            handleNewLocation(mapTracker.getUserLastLocation(), true);
         }
     };
 
+
+    // GOOGLE API LOCATION SERVICE METHODS
 
     protected synchronized void buildGoogleApiClient() {
         mGoogleApiClient = new GoogleApiClient.Builder(this)
@@ -296,37 +260,43 @@ public class MainActivity extends AppCompatActivity implements
     @Override
     public void onConnected(Bundle connectionHint) {
         Log.i(TAG, "Location services connected.");
-        userLastLocation = LocationServices.FusedLocationApi.getLastLocation(
-                mGoogleApiClient);
-        if (userLastLocation == null) {
+        mapTracker.setUserLastLocation(LocationServices.FusedLocationApi.getLastLocation(
+                mGoogleApiClient));
+        if (mapTracker.getUserLastLocation() == null) {
             LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, mLocationRequest, this);
-        } else if (isFirstConnection) {
-            isFirstConnection = false;
-            handleNewLocation(userLastLocation, true);
+        } else if (mapTracker.isFirstConnection()) {
+            mapTracker.setIsFirstConnection(false);
+            handleNewLocation(mapTracker.getUserLastLocation(), true);
             loadData();
         }
     }
 
     @Override
     public void onLocationChanged(Location mLastLocation) {
-        userLastLocation = mLastLocation;
-        handleNewLocation(userLastLocation, false);
+        mapTracker.setUserLastLocation(mLastLocation);
+        handleNewLocation(mapTracker.getUserLastLocation(), false);
     }
 
+    // new user location detected
     private void handleNewLocation(Location mLastLocation, boolean center) {
         Log.i(TAG, "handling new location");
         double currentLatitude = mLastLocation.getLatitude();
         double currentLongitude = mLastLocation.getLongitude();
         LatLng currentPosition = new LatLng(currentLatitude, currentLongitude);
-        if (userLocationMarker != null) {
-            mapView.removeAnnotation(userLocationMarker);
+        if (mapTracker.getUserLocationMarker() != null) {
+            System.out.println("removing annotation");
+            mapView.removeAnnotation(mapTracker.getUserLocationMarker());
         }
         // new userLocationMarker
-        userLocationMarker = mapView.addMarker(new MarkerOptions()
-                .position(currentPosition));
+        mapTracker.setUserLocationMarker(mapView.addMarker(new MarkerOptions()
+                .position(currentPosition)));
         if (center) {
             mapView.setCenterCoordinate(currentPosition);
-            lastCenterLocation = currentPosition;
+            mapTracker.setLastCenterLocation(currentPosition);
+            if (mapView.getZoomLevel() >= DATA_ZOOM_LEVEL) {
+                MapArtist.clearMap(mapView, mapTracker);
+                loadData();
+            }
         }
     }
 
@@ -356,6 +326,8 @@ public class MainActivity extends AppCompatActivity implements
         }
     }
 
+    // ANDROID ACTIVTY FUNCTIONS
+
     @Override
     protected void onStart() {
         super.onStart();
@@ -383,26 +355,28 @@ public class MainActivity extends AppCompatActivity implements
         mapView.onResume();
         mGoogleApiClient.connect();
 
-        if (handleAddressOnResume) {  // search address activity just finished
+        if (mapTracker.isHandleAddressOnResume()) {  // search address activity just finished
             try {
-                if (lastSearchedAddressMarker != null) {
-                    mapView.removeAnnotation(lastSearchedAddressMarker);
+                if (mapTracker.getLastSearchedAddressMarker() != null) {
+                    mapView.removeAnnotation(mapTracker.getLastSearchedAddressMarker());
                 }
-                LatLng searchedPosition = new LatLng(lastSearchedAddress.getLatitude(), lastSearchedAddress.getLongitude());
-                lastSearchedAddressMarker = mapView.addMarker(new MarkerOptions().position(searchedPosition));
+                Address lastSearchedAddress = mapTracker.getLastSearchedAddress();
+                LatLng searchedPosition = DataHelper.extractLatLng(lastSearchedAddress);
+                String textAddress = DataHelper.extractAddressText(lastSearchedAddress);
+                addressText.setText(textAddress);
+
+                mapTracker.setLastSearchedAddressMarker(mapView.addMarker(new MarkerOptions()
+                        .position(searchedPosition)
+                        .title("Searched Address:")
+                        .snippet(textAddress)));
+
                 mapView.setCenterCoordinate(searchedPosition);
-                System.out.println(mapView.getCenterCoordinate());
-                System.out.println(searchedPosition);
-                if (mapView.getCenterCoordinate() != searchedPosition) {
-                    System.out.println("I DOT KNOW WHATS HAPPENING");
-                }
-                System.out.println("should have changed the map location");
             } catch (IllegalStateException ise) {
                 Toast.makeText(getApplicationContext(),
                         "cannot resolve exact location of searched address",
                         Toast.LENGTH_LONG).show();
             }
-            handleAddressOnResume = false;
+            mapTracker.setHandleAddressOnResume(false);
         }
     }
 
@@ -418,29 +392,84 @@ public class MainActivity extends AppCompatActivity implements
         mapView.onSaveInstanceState(outState);
     }
 
+    // Handles result of other activity execution like address searching
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == 1) {
+            if (resultCode == Activity.RESULT_OK) {
+                Address selectedAddress = data.getExtras().getParcelable("SELECTED_ADDRESS");
+
+                mapTracker.setLastSearchedAddress(selectedAddress);
+                mapTracker.setHandleAddressOnResume(true);
+                // onResume() is about to be called and searched address added to map
+            } else if (resultCode == Activity.RESULT_CANCELED) {
+                //Write your code if there's no result
+            }
+        } else if (requestCode == 2) {
+            if (resultCode == Activity.RESULT_OK) {
+                mapTracker.setCurrentRouteStart((Address) data.getExtras().getParcelable("FROM_ADDRESS"));
+
+                mapTracker.setCurrentRouteEnd((Address) data.getExtras().getParcelable("TO_ADDRESS"));
+                String mobilitySelection = data.getExtras().getString("MOBILITY_SELECTION");
+
+                if (mapTracker.getCurrentRouteStart() == null || mapTracker.getCurrentRouteEnd() == null) {
+                    Toast.makeText(getApplicationContext(),
+                            "you must select start and end destination for routing", Toast.LENGTH_LONG).show();
+                } else {
+                    System.out.println("THIS IS A BIG DEAL!!!!");
+                    System.out.println(mobilitySelection);
+
+                    // TODO: SEND OFF ROUTING SELECTION
+                    try {
+                        mapTracker.setCurrentRoute(MapArtist.extractRoute(new JSONObject(getString(R.string.route_manual_json))));
+                        MapArtist.drawRoute(mapView, mapTracker, true);
+                    } catch (JSONException je) {
+                        System.out.println("we had a problem parsing the json");
+                    }
+                }
+            } else if (resultCode == Activity.RESULT_CANCELED) {
+                //Write your code if there's no result
+            }
+        }
+    } //onActivityResult
+
+    public void checkWifi() {
+        ConnectivityManager connManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        Network[] networks = connManager.getAllNetworks();
+
+        if (networks == null || networks.length == 0) {
+            Toast.makeText(getApplicationContext(),
+                    "Access Map needs Wifi or Mobile Network connection",
+                    Toast.LENGTH_LONG).show();
+        }
+    }
+
+    // returns -1 on error otherwise meters between coordinates
+    private float computeDistance(LatLng one, LatLng two) {
+        float[] distanceArray = new float[1];
+        try {
+            Location.distanceBetween(one.getLatitude(), one.getLongitude(),
+                    two.getLatitude(), two.getLongitude(), distanceArray);
+            return distanceArray[0];
+        } catch (IllegalArgumentException iae) {
+            System.out.println("distanceBetween failed");
+            return -1;
+        }
+    }
+
+    // DATA HANDLING FUNCTIONS BELOW
+
     public void loadData() {
-        // TODO handle deleting old annotations
         System.out.println("LOADING MORE DATA");
         System.out.println(mapView.getCenterCoordinate());
-        String bounds = getDataBounds(mapView.getCenterCoordinate());
-        String api_url = getString(R.string.api_url);
+        String bounds = MapArtist.getDataBounds(mapView.getCenterCoordinate());
         System.out.println("About to load data");
+        String api_url = getString(R.string.api_url);
         for (MapFeature mapFeature : mapFeatureState) {
             if (mapFeature.isVisible()) {
                 new CallAccessMapAPI().execute(api_url, mapFeature.getUrl(), bounds);
             }
         }
-    }
-
-    // always get bounds for zoom level 15 and higher
-    // format = botom left long, bottom left lat, top right long, top right lat
-    public String getDataBounds(LatLng centerCoordinate) {
-        double longitude = centerCoordinate.getLongitude();
-        double latitude = centerCoordinate.getLatitude();
-        return (longitude - .003) + "," + (latitude - .003) + "," + (longitude + .003) + "," + (latitude + .003);
-        // +- .01 at Longitute
-        // +- .01 Latitude
-        // aproximate zoom level 15 bounds
     }
 
     private class CallAccessMapAPI extends AsyncTask<String, String, JSONObject> {
@@ -455,15 +484,9 @@ public class MainActivity extends AppCompatActivity implements
             // HTTP Get
             try {
 
-                String bbox = "-122.357879,47.646978,-122.348556,47.655709";
-                System.out.println(bbox);
-                System.out.println(bounds);
-                String charset = "UTF-8";
-                String query = String.format("bbox=%s", bounds); // URLEncoder.encode(bbox, charset));
 
+                String query = String.format("bbox=%s", bounds);
                 URL url = new URL(urlString + "?" + query);
-                //URL url = new URL(urlString);
-                System.out.println(urlString + "?" + query);
                 HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
                 if (urlConnection == null) {
                     System.out.println("we have a problem");
@@ -473,12 +496,10 @@ public class MainActivity extends AppCompatActivity implements
                 if (in == null) {
                     System.out.println("we have another problem");
                 }
-                System.out.println("here");
 
                 String inputLine;
                 StringBuffer response = new StringBuffer();
 
-                System.out.println("wassup");
                 while ((inputLine = in.readLine()) != null) {
                     response.append(inputLine);
                 }
@@ -502,17 +523,20 @@ public class MainActivity extends AppCompatActivity implements
         protected void onPostExecute(JSONObject result) {
             if (result == null) {
                 System.out.println("NULL!!!!");
-                // do nothing
+                Toast.makeText(getApplicationContext(), "A Network error occurred, check Network connection", Toast.LENGTH_LONG).show();
             } else {
                 Log.i(TAG, "POST EXECUTE!!!");
                 System.out.println("We made it!");
                 try {
                     switch (result.getString("class")) {
                         case "/curbs.geojson":
-                            drawCurbs(result);
+                            MapArtist.drawCurbs(mapView, result);
                             break;
                         case "/sidewalks.geojson":
-                            drawSidewalks(result);
+                            MapArtist.drawSidewalks(mapView, result);
+                            break;
+                        case "/permits.geojson":
+                            MapArtist.drawPermits(mapView, result);
                             break;
                     }
                 } catch (JSONException je) {
@@ -521,73 +545,4 @@ public class MainActivity extends AppCompatActivity implements
             }
         }
     }  // end CallAccessMapAPI
-
-    public void drawSidewalks(JSONObject sidewalkData) {
-        try {
-            JSONArray features = sidewalkData.getJSONArray("features");
-            List<PolylineOptions> polylines = new ArrayList<PolylineOptions>();
-            for (int i = 0; i < features.length(); i++) {
-                JSONObject feature = features.getJSONObject(i);
-                JSONObject geometry = feature.getJSONObject("geometry");
-                JSONArray coordinates = geometry.getJSONArray("coordinates");
-                LatLng latlngStart = convertToLatLng(coordinates.getJSONArray(0));
-                LatLng latlngEnd = convertToLatLng(coordinates.getJSONArray(1));
-                double grade = feature.getJSONObject("properties").getDouble("grade");
-                if (grade > HIGH_GRADE) {
-                    polylines.add(new PolylineOptions().add(latlngStart, latlngEnd).width(2).color(Color.parseColor("#012900")));
-                } else if (grade > MID_GRADE) {
-                    polylines.add(new PolylineOptions().add(latlngStart, latlngEnd).width(2).color(Color.parseColor("#029400")));
-                } else {  // LOW_GRADE
-                    polylines.add(new PolylineOptions().add(latlngStart, latlngEnd).width(2).color(Color.parseColor("#06f902")));
-                }
-            }
-
-            System.out.println("About to draw sidewalks");
-            mapView.addPolylines(polylines);
-        } catch (JSONException je) {
-            Log.i(TAG, "JSON ERROR");
-        }
-    }
-
-    public void drawCurbs(JSONObject curbData) {
-        try {
-            JSONArray features = curbData.getJSONArray("features");
-            List<MarkerOptions> markers = new ArrayList<MarkerOptions>();
-            for (int i = 0; i < features.length(); i++) {
-                JSONObject feature = features.getJSONObject(i);
-                JSONObject geometry = feature.getJSONObject("geometry");
-                JSONArray coordinates = geometry.getJSONArray("coordinates");
-                LatLng latlng = new LatLng(coordinates.getDouble(1), coordinates.getDouble(0));
-                markers.add(new MarkerOptions().position(latlng).sprite("circle-11"));  // "circle-11"
-            }
-
-            System.out.println("About to draw curbs");
-            mapView.addMarkers(markers);
-        } catch (JSONException je) {
-            Log.i(TAG, "JSON ERROR");
-        }
-    }
-
-    public void drawPermits(JSONObject permitData) {
-        try {
-            JSONArray features = permitData.getJSONArray("features");
-            List<MarkerOptions> markers = new ArrayList<MarkerOptions>();
-            for (int i = 0; i < features.length(); i++) {
-                JSONObject feature = features.getJSONObject(i);
-                JSONObject geometry = feature.getJSONObject("geometry");
-                JSONArray coordinates = geometry.getJSONArray("coordinates");
-                LatLng latlng = new LatLng(coordinates.getDouble(1), coordinates.getDouble(0));
-                markers.add(new MarkerOptions().position(latlng).sprite("circle-11"));  // "circle-11"
-            }
-
-            System.out.println("About to draw curbs");
-            mapView.addMarkers(markers);
-        } catch (JSONException je) {
-            Log.i(TAG, "JSON ERROR");
-        }
-    }
-
-    private LatLng convertToLatLng(JSONArray coordinates) throws JSONException {
-        return new LatLng(coordinates.getDouble(1), coordinates.getDouble(0));
-    }
 }

@@ -28,12 +28,24 @@
         android:text="Find Me"
         android:layout_below="@+id/address_text_bar"/>
 
+    <Button android:id="@+id/adjust_features_button"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Features"
+        android:layout_below="@+id/center_user_location_button"/>
+
+    <Button android:id="@+id/route_button"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Route"
+        android:layout_below="@+id/adjust_features_button"/>
+
     <ImageButton android:id="@+id/zoom_in_button"
         android:layout_width="60dp"
         android:layout_height="60dp"
         android:scaleType="fitXY"
         android:src="@drawable/zoom_in_button"
-        android:layout_below="@+id/center_user_location_button"/>
+        android:layout_below="@+id/route_button"/>
 
     <ImageButton android:id="@+id/zoom_out_button"
         android:layout_width="60dp"
@@ -41,11 +53,4 @@
         android:scaleType="fitXY"
         android:src="@drawable/zoom_out_button"
         android:layout_below="@+id/zoom_in_button"/>
-
-    <Button android:id="@+id/adjust_features_button"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Features"
-        android:layout_below="@+id/zoom_out_button"/>
-
 </RelativeLayout>
