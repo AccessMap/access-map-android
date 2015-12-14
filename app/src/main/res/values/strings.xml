@@ -82,4 +82,5 @@
 }
 }]}</string>
     <string name="title_activity_routing">Routing</string>
+    <string name="title_activity_routing_display">RoutingDisplayActivity</string>
 </resources>

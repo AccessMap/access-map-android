@@ -48,6 +48,7 @@ public class SearchAddressActivity extends Activity {
         listView = (ListView) findViewById(R.id.address_options);
         geocoder = new Geocoder(this, Locale.ENGLISH);
 
+        // bounds for valid addresses
         lowerLeftLat = Double.parseDouble(getString(R.string.lower_left_lat));
         lowerLeftLong = Double.parseDouble(getString(R.string.lower_left_long));
         upperRightLat = Double.parseDouble(getString(R.string.upper_right_lat));
@@ -61,15 +62,6 @@ public class SearchAddressActivity extends Activity {
             @Override
             public void afterTextChanged(Editable s) {
                 // AUTO GENERATED
-            }
-
-            @Override
-            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
-                // AUTO GENERATED
-            }
-
-            @Override
-            public void onTextChanged(CharSequence s, int start, int before, int count) {
                 if (s.length() >= 3 && (System.currentTimeMillis() - lastSearch > DELAY)) {
                     lastSearch = System.currentTimeMillis();
                     String locationName = addressText.getText().toString();
@@ -97,24 +89,32 @@ public class SearchAddressActivity extends Activity {
                     }
                 }
             }
-        });
 
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+                // AUTO GENERATED
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                // AUTO GENERATED
+            }
+        });
 
         // select address from list
         listView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             @Override
             public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
-
-                Address selectedAddress = locationList.get(position);
-                System.out.println(selectedAddress);
-
-                String result = (String) listView.getAdapter().getItem(position);
-                System.out.println(result);
-
-                Intent resultIntent = new Intent();
-                resultIntent.putExtra("SELECTED_ADDRESS", selectedAddress);
-                setResult(Activity.RESULT_OK, resultIntent);
-                finish();
+                if (locationList == null || locationList.size() <= position) {
+                    Toast.makeText(getApplicationContext(), "selection is not a valid address", Toast.LENGTH_LONG).show();
+                } else {
+                    // return selection
+                    Address selectedAddress = locationList.get(position);
+                    Intent resultIntent = new Intent();
+                    resultIntent.putExtra("SELECTED_ADDRESS", selectedAddress);
+                    setResult(Activity.RESULT_OK, resultIntent);
+                    finish();
+                }
             }
         });
     }

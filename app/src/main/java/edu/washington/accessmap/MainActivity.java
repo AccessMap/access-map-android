@@ -435,9 +435,9 @@ public class MainActivity extends AppCompatActivity implements
 
     public void checkWifi() {
         ConnectivityManager connManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
-        Network[] networks = connManager.getAllNetworks();
+        NetworkInfo networkInfo = connManager.getActiveNetworkInfo();
 
-        if (networks == null || networks.length == 0) {
+        if (networkInfo == null || !networkInfo.isConnected()) {
             Toast.makeText(getApplicationContext(),
                     "Access Map needs Wifi or Mobile Network connection",
                     Toast.LENGTH_LONG).show();
