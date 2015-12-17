@@ -112,9 +112,9 @@ public class MainActivity extends AppCompatActivity implements
         buildLocationRequest();
 
         /** Instanciate MapView and properties */
+        mapTracker = new MapStateTracker();
         mapView = (MapView) findViewById(R.id.mapview);
         setUpMapProperties(savedInstanceState);
-        mapTracker = new MapStateTracker();
 
         // Instanciate Map Feature Tracker
         Resources res = getResources();
@@ -139,7 +139,7 @@ public class MainActivity extends AppCompatActivity implements
         mapView.onCreate(savedInstanceState);
     }
 
-    // Pulls feature information from res
+    // Pulls feature information from string resources
     public void instanciateFeatureTracker(String[] featureResources) {
         for (int i = 0; i < featureResources.length; i++) {
             System.out.println(featureResources[i]);
@@ -189,6 +189,26 @@ public class MainActivity extends AppCompatActivity implements
         closeRouteView.setOnClickListener(closeRouteViewOnCLickListener);
     }
 
+    // Detects if new data should be loaded on the map, or if data should be removed
+    MapView.OnMapChangedListener handleMapChange = new MapView.OnMapChangedListener() {
+        @Override
+        public void onMapChanged(int change) {
+            double currentZoom = mapView.getZoomLevel();
+            LatLng centerCoordinate = mapView.getCenterCoordinate();
+            float computedDistance = computeDistance(centerCoordinate, mapTracker.getLastCenterLocation());
+
+            if (mapTracker.getLastZoomLevel() >= DATA_ZOOM_LEVEL && currentZoom < DATA_ZOOM_LEVEL) {
+                MapArtist.clearMap(mapView, mapTracker);
+            } else if (mapTracker.getLastZoomLevel() < DATA_ZOOM_LEVEL && currentZoom >= DATA_ZOOM_LEVEL) {
+                loadData();
+            } else if (computedDistance > CHANGE_DATA_DISTANCE && currentZoom >= DATA_ZOOM_LEVEL) {
+                mapTracker.setLastCenterLocation(centerCoordinate);
+                refreshMap();
+            }
+            mapTracker.setLastZoomLevel(currentZoom);
+        }
+    };
+
     View.OnClickListener searchAddress = new View.OnClickListener() {
         @Override
         public void onClick(View arg0) {
@@ -198,35 +218,13 @@ public class MainActivity extends AppCompatActivity implements
         }
     };
 
-    MapView.OnMapChangedListener handleMapChange = new MapView.OnMapChangedListener() {
-        @Override
-        public void onMapChanged(int change) {
-            double zoom = mapView.getZoomLevel();
-            LatLng centerCoordinate = mapView.getCenterCoordinate();
-            float computedDistance = computeDistance(centerCoordinate, mapTracker.getLastCenterLocation());
-
-            if (mapTracker.getLastZoomLevel() >= DATA_ZOOM_LEVEL && zoom < DATA_ZOOM_LEVEL) {
-                mapTracker.setLastZoomLevel(zoom);
-                MapArtist.clearMap(mapView, mapTracker);
-            } else if (mapTracker.getLastZoomLevel() < DATA_ZOOM_LEVEL && zoom >= DATA_ZOOM_LEVEL) {
-                mapTracker.setLastZoomLevel(zoom);
-                loadData();
-            } else if (computedDistance > CHANGE_DATA_DISTANCE && zoom >= DATA_ZOOM_LEVEL) {
-                mapTracker.setLastZoomLevel(zoom);
-                mapTracker.setLastCenterLocation(centerCoordinate);
-                System.out.println("CHANGED REGION");
-                refreshMap();
-            }
-        }
-    };
-
     View.OnClickListener zoomInButtonOnClickListener = new View.OnClickListener() {
         @Override
         public void onClick(View arg0) {
             double currentZoomLevel = mapView.getZoomLevel();
             if (currentZoomLevel + 1 < MapView.MAXIMUM_ZOOM_LEVEL) {
                 mapView.setZoomLevel(currentZoomLevel + 1, true);  // animated zoom in
-            } else {
+            } else {  // cant zoom any further
                 mapView.setZoomLevel(MapView.MAXIMUM_ZOOM_LEVEL, true);
             }
             mapTracker.setLastZoomLevel(currentZoomLevel);
@@ -254,8 +252,8 @@ public class MainActivity extends AppCompatActivity implements
             DialogFragment featureAdjuster = new FeatureAdjuster() {
                 @Override
                 public void onDismiss(final DialogInterface dialog) {
-                    //Fragment dialog had been dismissed
-                    refreshMap();  // makes users preferences load when dialog closses
+                    refreshMap();  // makes users preferences load when dialog closes
+                    getFragmentManager().beginTransaction().remove(this).commit();  // ensures dialog closes
                 }
             };
             Bundle args = new Bundle();
@@ -268,7 +266,6 @@ public class MainActivity extends AppCompatActivity implements
     View.OnClickListener routeButtonOnClickListener = new View.OnClickListener(){
         @Override
         public void onClick(View arg0) {
-            // temporary bypassing of interface and api call
             closeSearchDisplay();  // could be active here if routing after a search
             Intent routeSearch = new Intent(MainActivity.this, Routing.class);
             routeSearch.putExtra("USER_LOCATION", true);  // no from address needed if true
@@ -290,10 +287,6 @@ public class MainActivity extends AppCompatActivity implements
             closeSearchDisplay();
         }
     };
-
-    public static void setMapFeatures(MapFeature[] newFeatureSelection) {
-        mapFeatureState = newFeatureSelection;
-    }
 
     View.OnClickListener centerOnUserLocationButtonOnClickListener = new View.OnClickListener(){
         @Override
@@ -347,10 +340,8 @@ public class MainActivity extends AppCompatActivity implements
         double currentLongitude = mLastLocation.getLongitude();
         LatLng currentPosition = new LatLng(currentLatitude, currentLongitude);
         if (mapTracker.getUserLocationMarker() != null) {
-            System.out.println("removing annotation");
             mapView.removeAnnotation(mapTracker.getUserLocationMarker());
         }
-        // new userLocationMarker
         mapTracker.setUserLocationMarker(mapView.addMarker(new MarkerOptions()
                 .position(currentPosition)));
         if (center) {
@@ -383,7 +374,7 @@ public class MainActivity extends AppCompatActivity implements
                     errorCode == ConnectionResult.SERVICE_MISSING ||
                     errorCode == ConnectionResult.SERVICE_DISABLED) {
                 Dialog dialog = GooglePlayServicesUtil.getErrorDialog(errorCode, this, 1);
-                dialog.show();
+                dialog.show();  // redirects to google play store
             }
         }
     }
@@ -459,46 +450,39 @@ public class MainActivity extends AppCompatActivity implements
     // Handles result of other activity execution like address searching
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        if (requestCode == 1) {
+        if (requestCode == 1) {  // search activity received
             if (resultCode == Activity.RESULT_OK) {
                 Address selectedAddress = data.getExtras().getParcelable("SELECTED_ADDRESS");
-
                 mapTracker.setLastSearchedAddress(selectedAddress);
                 mapTracker.setHandleAddressOnResume(true);
                 // onResume() is about to be called and searched address added to map
             } else if (resultCode == Activity.RESULT_CANCELED) {
-                //Write your code if there's no result
+                //Write code for if there's no result
             }
-        } else if (requestCode == 2) {
+        } else if (requestCode == 2) {  // routing activity received
             if (resultCode == Activity.RESULT_OK) {
-                System.out.println(data.getExtras().getBoolean("USER_LATLNG"));
                 if (data.getExtras().getBoolean("USER_LATLNG")) {  // use user current location
                     double currentLatitude = mapTracker.getUserLastLocation().getLatitude();
                     double currentLongitude = mapTracker.getUserLastLocation().getLongitude();
-                    Address x = new Address(Locale.US);
+                    Address x = new Address(Locale.US);  // build dummy address to use in routing
                     x.setAddressLine(0, "Your Current Location");
                     x.setLatitude(currentLatitude);
                     x.setLongitude(currentLongitude);
                     mapTracker.setCurrentRouteStart(x);
                     System.out.println(mapTracker.getCurrentRouteStart());
-                } else {
+                } else {  // dont use user location
                     mapTracker.setCurrentRouteStart((Address) data.getExtras().getParcelable("FROM_ADDRESS"));
                 }
-
                 mapTracker.setCurrentRouteEnd((Address) data.getExtras().getParcelable("TO_ADDRESS"));
-                String mobilitySelection = data.getExtras().getString("MOBILITY_SELECTION");
 
-                System.out.println(mapTracker.getCurrentRouteEnd());
-                System.out.println(mapTracker.getCurrentRouteStart());
+                // TODO: receive mobility type and send it with api call
+                // String mobilitySelection = data.getExtras().getString("MOBILITY_SELECTION");
 
                 if (mapTracker.getCurrentRouteStart() == null || mapTracker.getCurrentRouteEnd() == null) {
                     Toast.makeText(getApplicationContext(),
                             "you must select start and end destination for routing", Toast.LENGTH_LONG).show();
                 } else {
-                    System.out.println("THIS IS A BIG DEAL!!!!");
-                    System.out.println(mobilitySelection);
                     String coordinates = DataHelper.getRouteCoordinates(mapTracker);
-                    System.out.println(coordinates);
                     new CallAccessMapAPI().execute(getString(R.string.routing_url), getString(R.string.routing_endpoint), coordinates);
                     mapTracker.setRoutingDialog(ProgressDialog.show(this, "", "Finding Route. Please wait...", true));
                     enterRouteView();
@@ -527,10 +511,14 @@ public class MainActivity extends AppCompatActivity implements
             Location.distanceBetween(one.getLatitude(), one.getLongitude(),
                     two.getLatitude(), two.getLongitude(), distanceArray);
             return distanceArray[0];
-        } catch (IllegalArgumentException iae) {
-            System.out.println("distanceBetween failed");
+        } catch (IllegalArgumentException iae) {  // failure
             return -1;
         }
+    }
+
+    // method called from feature adjuster to save new feature choices
+    public static void setMapFeatures(MapFeature[] newFeatureSelection) {
+        mapFeatureState = newFeatureSelection;
     }
 
     private void enterRouteView() {
@@ -544,14 +532,6 @@ public class MainActivity extends AppCompatActivity implements
 
         RelativeLayout.LayoutParams zib = (RelativeLayout.LayoutParams) zoomInButton.getLayoutParams();
         zib.addRule(RelativeLayout.BELOW, R.id.adjust_features_button);
-
-        // visbility gone of address search bar
-        // visibility gone of route button
-        // visibility visbile on listView
-        // load to and from address into listview
-        // make listview editable, which should load route screen again
-        // make floating action button visible
-        // change id of relative layouts
     }
 
     private void closeRouteView() {
@@ -588,11 +568,9 @@ public class MainActivity extends AppCompatActivity implements
         loadData();
     }
 
+    // loads data for every checked feature
     public void loadData() {
-        System.out.println("LOADING MORE DATA");
-        System.out.println(mapView.getCenterCoordinate());
         String bounds = MapArtist.getDataBounds(mapView.getCenterCoordinate());
-        System.out.println("About to load data");
         String api_url = getString(R.string.api_url);
         for (MapFeature mapFeature : mapFeatureState) {
             if (mapFeature.isVisible()) {
@@ -605,9 +583,8 @@ public class MainActivity extends AppCompatActivity implements
 
         @Override
         protected JSONObject doInBackground(String... params) {
-            Log.i(TAG, "DOING IN BACKGROUND");
             String urlString = params[0] + params[1];  // URL to call
-            String coordinates = params[2];
+            String coordinates = params[2];  // bounds for data or route start and stop
             JSONObject result = null;
 
             // HTTP Get
@@ -620,47 +597,28 @@ public class MainActivity extends AppCompatActivity implements
                 }
                 URL url = new URL(urlString + "?" + query);
                 HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
-                if (urlConnection == null) {
-                    System.out.println("we have a problem");
-                }
                 BufferedReader in = new BufferedReader( new InputStreamReader(urlConnection.getInputStream()));
-
-                if (in == null) {
-                    System.out.println("we have another problem");
-                }
-
                 String inputLine;
                 StringBuffer response = new StringBuffer();
-
                 while ((inputLine = in.readLine()) != null) {
                     response.append(inputLine);
                 }
-
                 in.close();
-
-                System.out.println(response.toString());
-                Log.i(TAG, response.toString());
-
                 result = new JSONObject(response.toString());
-                result.put("class", params[1]);  // track data type
-
+                result.put("class", params[1]);  // track data type in json object
             } catch (Exception e ) {
                 System.out.println(e.getMessage());
                 return null;
             }
-
             return result;
         }
 
         protected void onPostExecute(JSONObject result) {
-            if (result == null) {
-                System.out.println("NULL!!!!");
-                mapTracker.getRoutingDialog().cancel();
+            if (result == null) {  // server or network error
+                mapTracker.getRoutingDialog().cancel();  // closes spinning "finding route" dialog
                 closeRouteView();
                 Toast.makeText(getApplicationContext(), "A Network error occurred, or no possible route avaliable, please check Network connection", Toast.LENGTH_LONG).show();
             } else {
-                Log.i(TAG, "POST EXECUTE!!!");
-                System.out.println("We made it!");
                 try {
                     switch (result.getString("class")) {
                         case "/curbs.geojson":
@@ -673,8 +631,8 @@ public class MainActivity extends AppCompatActivity implements
                             MapArtist.drawPermits(mapView, result);
                             break;
                         case "route.json":
-                            System.out.println("here");
                             mapTracker.setCurrentRoute(MapArtist.extractRoute(result));
+                            // populate route display
                             List<String> routeInfo = new ArrayList<String>();
                             routeInfo.add("From: " + DataHelper.extractAddressText(mapTracker.getCurrentRouteStart()));
                             routeInfo.add("To: " + DataHelper.extractAddressText(mapTracker.getCurrentRouteEnd()));
