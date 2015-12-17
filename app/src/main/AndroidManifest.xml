@@ -37,11 +37,6 @@
             android:label="@string/title_activity_routing"
             android:theme="@style/AppTheme.NoActionBar" >
         </activity>
-        <activity
-            android:name=".RoutingDisplayActivity"
-            android:label="@string/title_activity_routing_display"
-            android:theme="@style/AppTheme.NoActionBar" >
-        </activity>
     </application>
 
 </manifest>

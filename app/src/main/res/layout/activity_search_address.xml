@@ -11,7 +11,18 @@
         android:layout_width="fill_parent"
         android:layout_height="60dp"
         android:inputType="text"
-        android:background="#ffffff" />
+        android:background="#ffffff"
+        android:hint="search for a location"/>
+
+    <ImageButton
+        android:layout_width="50dp"
+        android:layout_height="50dp"
+        android:src="@drawable/xsmall"
+        android:id="@+id/clear_text"
+        android:layout_alignParentRight="true"
+        android:layout_alignParentEnd="true"
+        android:layout_alignParentTop="true"
+        android:layout_marginTop="5dp"/>
 
     <ListView
         android:id="@+id/address_options"

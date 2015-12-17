@@ -3,6 +3,7 @@ package edu.washington.accessmap;
 import android.graphics.Color;
 import android.location.Address;
 import android.provider.ContactsContract;
+import android.text.TextUtils;
 import android.util.Log;
 
 import com.mapbox.mapboxsdk.annotations.MarkerOptions;
@@ -31,10 +32,15 @@ public class MapArtist {
         mapView.removeAllAnnotations();
 
         if (mapTracker.getUserLocationMarker() != null) {
-            mapView.addMarker(new MarkerOptions().position(mapTracker.getUserLocationMarker().getPosition()));
+            mapView.addMarker(new MarkerOptions()
+                    .position(mapTracker.getUserLocationMarker().getPosition())
+                    .title("Your Location"));
         }
         if (mapTracker.getLastSearchedAddressMarker() != null) {
-            mapView.addMarker(new MarkerOptions().position(mapTracker.getLastSearchedAddressMarker().getPosition()));
+            mapView.addMarker(new MarkerOptions()
+                    .position(mapTracker.getLastSearchedAddressMarker().getPosition())
+                    .title("Searched Address:")
+                    .snippet(DataHelper.extractAddressText(mapTracker.getLastSearchedAddress())));
         }
         if (mapTracker.getCurrentRoute() != null) {
             MapArtist.drawRoute(mapView, mapTracker, false);
@@ -120,28 +126,47 @@ public class MapArtist {
         }
     }
 
-    public static List<PolylineOptions> extractRoute(JSONObject routeData) {
+    public static ArrayList<LatLng> extractRoute(JSONObject routeData) {
+        ArrayList<LatLng> points = new ArrayList<LatLng>();
+
+        // Parse JSON
         try {
-            JSONArray features = routeData.getJSONArray("features");
-            List<PolylineOptions> polylines = new ArrayList<PolylineOptions>();
-            for (int i = 0; i < features.length(); i++) {
-                JSONObject feature = features.getJSONObject(i);
-                JSONObject geometry = feature.getJSONObject("geometry");
-                JSONArray coordinates = geometry.getJSONArray("coordinates");
-                LatLng latlngStart = convertToLatLng(coordinates.getJSONArray(0));
-                LatLng latlngEnd = convertToLatLng(coordinates.getJSONArray(1));
-                polylines.add(new PolylineOptions().add(latlngStart, latlngEnd).width(4).color(Color.parseColor("#0000ff")));
+            JSONArray features = routeData.getJSONArray("routes");
+            JSONObject feature = features.getJSONObject(0);
+            JSONObject geometry = feature.getJSONObject("geometry");
+            if (geometry != null) {
+                String type = geometry.getString("type");
+
+                // Our GeoJSON only has one feature: a line string
+                if (!TextUtils.isEmpty(type) && type.equalsIgnoreCase("LineString")) {
+
+                    // Get the Coordinates
+                    JSONArray coords = geometry.getJSONArray("coordinates");
+                    for (int lc = 0; lc < coords.length(); lc++) {
+                        JSONArray coord = coords.getJSONArray(lc);
+                        LatLng latLng = new LatLng(coord.getDouble(1), coord.getDouble(0));
+                        points.add(latLng);
+                    }
+                }
             }
-            return polylines;
         } catch (JSONException je) {
             System.out.println("error in JSON extraction");
             return null;
         }
+
+        return points;
     }
 
     public static void drawRoute(MapView mapView, MapStateTracker mapTracker, boolean center) {
-        if (mapTracker.getCurrentRoute() != null) {
-            mapView.addPolylines(mapTracker.getCurrentRoute());
+        ArrayList<LatLng> currentRoute = mapTracker.getCurrentRoute();
+        if (currentRoute != null && currentRoute.size() > 0) {
+            LatLng[] pointsArray = currentRoute.toArray(new LatLng[currentRoute.size()]);
+
+            // Draw Points on MapView
+            mapView.addPolyline(new PolylineOptions()
+                    .add(pointsArray)
+                    .color(Color.parseColor("#0000ff"))
+                    .width(4));
         }
 
         Address start = mapTracker.getCurrentRouteStart();
@@ -149,6 +174,7 @@ public class MapArtist {
 
         LatLng startLatLng = DataHelper.extractLatLng(start);
         LatLng endLatLng = DataHelper.extractLatLng(end);
+
         if (center) {
             mapView.setCenterCoordinate(startLatLng);
             mapView.setZoomLevel(MainActivity.DATA_ZOOM_LEVEL);
@@ -162,6 +188,12 @@ public class MapArtist {
                 .position(endLatLng)
                 .title("End Address:")
                 .snippet(DataHelper.extractAddressText(end)));
+    }
+
+    public static void clearRoute(MapView mapView, MapStateTracker mapTracker) {
+        mapTracker.setCurrentRoute(null);
+        mapTracker.setCurrentRouteEnd(null);
+        mapTracker.setCurrentRouteStart(null);
     }
 
     private static LatLng convertToLatLng(JSONArray coordinates) throws JSONException {

@@ -4,7 +4,9 @@ import android.app.Activity;
 import android.content.Intent;
 import android.location.Address;
 import android.location.Geocoder;
+import android.media.Image;
 import android.os.Bundle;
+import android.provider.ContactsContract;
 import android.support.design.widget.FloatingActionButton;
 import android.support.design.widget.Snackbar;
 import android.support.v7.app.AppCompatActivity;
@@ -15,6 +17,7 @@ import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.EditText;
+import android.widget.ImageButton;
 import android.widget.ListView;
 import android.widget.Toast;
 
@@ -33,7 +36,10 @@ public class SearchAddressActivity extends Activity {
     private ListView listView = null;
     private EditText addressText = null;
     private Geocoder geocoder = null;
+    private Address previousSearch = null;
     private List<Address> locationList = null;
+    private ImageButton clearText = null;
+
     private double lowerLeftLat = 0;
     private double lowerLeftLong = 0;
     private double upperRightLat = 0;
@@ -44,9 +50,24 @@ public class SearchAddressActivity extends Activity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_search_address);
 
+        previousSearch = this.getIntent().getExtras().getParcelable("PREVIOUS_SEARCH");
+
         addressText = (EditText) findViewById(R.id.address_text);
         listView = (ListView) findViewById(R.id.address_options);
         geocoder = new Geocoder(this, Locale.ENGLISH);
+        clearText = (ImageButton) findViewById(R.id.clear_text);
+        clearText.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                addressText.setText("");
+                generateSearch();
+            }
+        });
+
+        if (previousSearch != null && previousSearch.getAddressLine(0) != null) {
+            addressText.setText(DataHelper.extractAddressText(previousSearch));
+            generateSearch();
+        }
 
         // bounds for valid addresses
         lowerLeftLat = Double.parseDouble(getString(R.string.lower_left_lat));
@@ -62,31 +83,9 @@ public class SearchAddressActivity extends Activity {
             @Override
             public void afterTextChanged(Editable s) {
                 // AUTO GENERATED
-                if (s.length() >= 3 && (System.currentTimeMillis() - lastSearch > DELAY)) {
+                if (System.currentTimeMillis() - lastSearch > DELAY) {
                     lastSearch = System.currentTimeMillis();
-                    String locationName = addressText.getText().toString();
-                    try {
-                        locationList = geocoder.getFromLocationName(
-                                locationName, 5, lowerLeftLat, lowerLeftLong, upperRightLat, upperRightLong);
-
-                        if (!locationList.isEmpty()) { // we have location results
-
-                            // build string version of addresses for listView
-                            List<String> locationStrings = new ArrayList<String>();
-                            for (Address a : locationList) {
-                                locationStrings.add(DataHelper.extractAddressText(a));
-                            }
-
-                            ArrayAdapter adapter = new ArrayAdapter<String>(getApplicationContext(),
-                                    android.R.layout.simple_list_item_1, locationStrings);
-                            listView.setAdapter(adapter);
-                        }
-                    } catch (IOException e) {
-                        Toast.makeText(getApplicationContext(),
-                                "network unavailable or any other I/O problem occurs" + locationName,
-                                Toast.LENGTH_LONG).show();
-                        e.printStackTrace();
-                    }
+                    generateSearch();
                 }
             }
 
@@ -117,5 +116,37 @@ public class SearchAddressActivity extends Activity {
                 }
             }
         });
+    }
+
+    public void generateSearch() {
+        if (addressText.getText().length() >= 3) {
+            String locationName = addressText.getText().toString();
+            try {
+                locationList = geocoder.getFromLocationName(
+                        locationName, 5, lowerLeftLat, lowerLeftLong, upperRightLat, upperRightLong);
+
+                if (!locationList.isEmpty()) { // we have location results
+
+                    // build string version of addresses for listView
+                    List<String> locationStrings = new ArrayList<String>();
+                    for (Address a : locationList) {
+                        locationStrings.add(DataHelper.extractAddressText(a));
+                    }
+
+                    ArrayAdapter adapter = new ArrayAdapter<String>(getApplicationContext(),
+                            R.layout.custom_list_element, R.id.list_content, locationStrings);
+                    listView.setAdapter(adapter);
+                }
+            } catch (IOException e) {
+                Toast.makeText(getApplicationContext(),
+                        "network unavailable or any other I/O problem occurs" + locationName,
+                        Toast.LENGTH_LONG).show();
+                e.printStackTrace();
+            }
+        } else {
+            ArrayAdapter adapter = new ArrayAdapter<String>(getApplicationContext(),
+                    R.layout.custom_list_element, R.id.list_content, new ArrayList<String>());
+            listView.setAdapter(adapter);
+        }
     }
 }

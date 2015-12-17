@@ -1,5 +1,6 @@
 package edu.washington.accessmap;
 
+import android.app.ProgressDialog;
 import android.location.Address;
 import android.location.Location;
 
@@ -7,6 +8,7 @@ import com.mapbox.mapboxsdk.annotations.Marker;
 import com.mapbox.mapboxsdk.annotations.PolylineOptions;
 import com.mapbox.mapboxsdk.geometry.LatLng;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -17,15 +19,35 @@ public class MapStateTracker {
     private Location userLastLocation = null;
     private Marker lastSearchedAddressMarker = null;
     private Address lastSearchedAddress = null;
-    private List<PolylineOptions> currentRoute = null;
+    private ArrayList<LatLng> currentRoute = null;
     private Address currentRouteStart = null;
     private Address currentRouteEnd = null;
     private boolean handleAddressOnResume = false;
     private LatLng lastCenterLocation = null;
     private double lastZoomLevel = MainActivity.DATA_ZOOM_LEVEL;
     private boolean isFirstConnection = true;
+    private ProgressDialog routingDialog = null;
+    private LatLng userLatLng = null;
 
     public MapStateTracker() {}
+
+    // GETTERS AND SETTERS BELOW
+
+    public LatLng getUserLatLng() {
+        return userLatLng;
+    }
+
+    public void setUserLatLng(LatLng userLatLng) {
+        this.userLatLng = userLatLng;
+    }
+
+    public ProgressDialog getRoutingDialog() {
+        return routingDialog;
+    }
+
+    public void setRoutingDialog(ProgressDialog routingDialog) {
+        this.routingDialog = routingDialog;
+    }
 
     public Marker getLastSearchedAddressMarker() {
         return lastSearchedAddressMarker;
@@ -59,11 +81,11 @@ public class MapStateTracker {
         this.lastSearchedAddress = lastSearchedAddress;
     }
 
-    public List<PolylineOptions> getCurrentRoute() {
+    public ArrayList<LatLng> getCurrentRoute() {
         return currentRoute;
     }
 
-    public void setCurrentRoute(List<PolylineOptions> currentRoute) {
+    public void setCurrentRoute(ArrayList<LatLng> currentRoute) {
         this.currentRoute = currentRoute;
     }
 
