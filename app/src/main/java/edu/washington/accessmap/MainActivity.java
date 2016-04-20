@@ -2,40 +2,26 @@ package edu.washington.accessmap;
 
 import android.app.Dialog;
 import android.app.DialogFragment;
-import android.app.LoaderManager;
 import android.app.ProgressDialog;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentSender;
-import android.content.Loader;
 import android.content.res.Resources;
-import android.database.Cursor;
-import android.graphics.Color;
 import android.location.Address;
-import android.location.Geocoder;
 import android.location.Location;
 import android.net.ConnectivityManager;
-import android.net.Network;
 import android.net.NetworkInfo;
 import android.os.AsyncTask;
 import android.os.Bundle;
-import android.provider.Telephony;
 import android.support.design.widget.FloatingActionButton;
-import android.support.design.widget.Snackbar;
 import android.support.v7.app.AppCompatActivity;
-import android.support.v7.widget.Toolbar;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
-import android.view.Menu;
-import android.view.MenuItem;
 import android.app.Activity;
-import android.os.Bundle;
-import android.view.ViewGroup;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
-import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.ListView;
@@ -48,28 +34,18 @@ import com.google.android.gms.common.api.GoogleApiClient;
 import com.google.android.gms.location.LocationListener;
 import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationServices;
-import com.google.android.gms.maps.model.Polyline;
-import com.mapbox.mapboxsdk.annotations.Annotation;
-import com.mapbox.mapboxsdk.annotations.Marker;
 import com.mapbox.mapboxsdk.annotations.MarkerOptions;
-import com.mapbox.mapboxsdk.annotations.PolylineOptions;
 import com.mapbox.mapboxsdk.constants.Style;
-import com.mapbox.mapboxsdk.geometry.BoundingBox;
 import com.mapbox.mapboxsdk.geometry.LatLng;
 import com.mapbox.mapboxsdk.views.MapView;
 
-import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.io.BufferedInputStream;
 import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -80,7 +56,9 @@ public class MainActivity extends AppCompatActivity implements
         LocationListener {
 
     private final static int CONNECTION_FAILURE_RESOLUTION_REQUEST = 9000;
+    // Shows data overlay only if current zoom level >= DATA_ZOOM_LEVEL
     public static final int DATA_ZOOM_LEVEL = 16;
+    // The smallest move in map view to trigger data reload
     public static final float CHANGE_DATA_DISTANCE = 200;
     public static final String TAG = MainActivity.class.getSimpleName();
 
@@ -111,16 +89,16 @@ public class MainActivity extends AppCompatActivity implements
         buildGoogleApiClient();
         buildLocationRequest();
 
-        /** Instanciate MapView and properties */
+        // Instantiate MapView and properties
         mapTracker = new MapStateTracker();
         mapView = (MapView) findViewById(R.id.mapview);
         setUpMapProperties(savedInstanceState);
 
-        // Instanciate Map Feature Tracker
+        // Instantiate Map Feature Tracker
         Resources res = getResources();
         String[] featureResources = res.getStringArray(R.array.feature_array);
         mapFeatureState = new MapFeature[featureResources.length];
-        instanciateFeatureTracker(featureResources);
+        instantiateFeatureTracker(featureResources);
 
         // User Interface Listeners
         buildUserInterfaceListeners();
@@ -140,7 +118,7 @@ public class MainActivity extends AppCompatActivity implements
     }
 
     // Pulls feature information from string resources
-    public void instanciateFeatureTracker(String[] featureResources) {
+    public void instantiateFeatureTracker(String[] featureResources) {
         for (int i = 0; i < featureResources.length; i++) {
             System.out.println(featureResources[i]);
             String[] results = featureResources[i].split("\\|");
@@ -222,11 +200,8 @@ public class MainActivity extends AppCompatActivity implements
         @Override
         public void onClick(View arg0) {
             double currentZoomLevel = mapView.getZoomLevel();
-            if (currentZoomLevel + 1 < MapView.MAXIMUM_ZOOM_LEVEL) {
-                mapView.setZoomLevel(currentZoomLevel + 1, true);  // animated zoom in
-            } else {  // cant zoom any further
-                mapView.setZoomLevel(MapView.MAXIMUM_ZOOM_LEVEL, true);
-            }
+            // true - animated zoom in
+            mapView.setZoomLevel(Math.min(currentZoomLevel + 1, MapView.MAXIMUM_ZOOM_LEVEL), true);
             mapTracker.setLastZoomLevel(currentZoomLevel);
             if (currentZoomLevel >= DATA_ZOOM_LEVEL) {
                 loadData();
@@ -238,7 +213,7 @@ public class MainActivity extends AppCompatActivity implements
         @Override
         public void onClick(View arg0) {
             double currentZoomLevel = mapView.getZoomLevel();
-            mapView.setZoomLevel(currentZoomLevel - 1, true);  // animated zoom out
+            mapView.setZoomLevel(Math.max(currentZoomLevel - 1, 0), true);  // animated zoom out
             mapTracker.setLastZoomLevel(currentZoomLevel);
             if (currentZoomLevel < DATA_ZOOM_LEVEL) {
                 MapArtist.clearMap(mapView, mapTracker);
@@ -379,7 +354,7 @@ public class MainActivity extends AppCompatActivity implements
         }
     }
 
-    // ANDROID ACTIVTY FUNCTIONS
+    // ANDROID ACTIVITY FUNCTIONS
 
     @Override
     protected void onStart() {
