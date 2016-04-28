@@ -5,6 +5,7 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 
     <application
@@ -37,6 +38,7 @@
             android:label="@string/title_activity_routing"
             android:theme="@style/AppTheme.NoActionBar" >
         </activity>
+        <service android:name="com.mapbox.mapboxsdk.telemetry.TelemetryService" />
     </application>
 
 </manifest>

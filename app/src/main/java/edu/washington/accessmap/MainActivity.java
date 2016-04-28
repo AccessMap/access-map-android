@@ -1,5 +1,6 @@
 package edu.washington.accessmap;
 
+import android.app.Activity;
 import android.app.Dialog;
 import android.app.DialogFragment;
 import android.app.ProgressDialog;
@@ -14,12 +15,12 @@ import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
 import android.support.design.widget.FloatingActionButton;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
-import android.view.Gravity;
 import android.view.View;
-import android.app.Activity;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.EditText;
@@ -35,9 +36,13 @@ import com.google.android.gms.location.LocationListener;
 import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationServices;
 import com.mapbox.mapboxsdk.annotations.MarkerOptions;
-import com.mapbox.mapboxsdk.constants.Style;
+import com.mapbox.mapboxsdk.camera.CameraPosition;
+import com.mapbox.mapboxsdk.camera.CameraUpdateFactory;
+import com.mapbox.mapboxsdk.constants.MapboxConstants;
 import com.mapbox.mapboxsdk.geometry.LatLng;
-import com.mapbox.mapboxsdk.views.MapView;
+import com.mapbox.mapboxsdk.maps.MapView;
+import com.mapbox.mapboxsdk.maps.MapboxMap;
+import com.mapbox.mapboxsdk.maps.OnMapReadyCallback;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -50,6 +55,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+
+// TODO: Request permission at runtime for Android 6.0
+
 public class MainActivity extends AppCompatActivity implements
         GoogleApiClient.ConnectionCallbacks,
         GoogleApiClient.OnConnectionFailedListener,
@@ -57,13 +65,15 @@ public class MainActivity extends AppCompatActivity implements
 
     private final static int CONNECTION_FAILURE_RESOLUTION_REQUEST = 9000;
     // Shows data overlay only if current zoom level >= DATA_ZOOM_LEVEL
-    public static final int DATA_ZOOM_LEVEL = 16;
+    public static final int DATA_ZOOM_LEVEL = 14;
     // The smallest move in map view to trigger data reload
     public static final float CHANGE_DATA_DISTANCE = 200;
     public static final String TAG = MainActivity.class.getSimpleName();
 
     // map variables
     public MapView mapView = null;
+    public MapboxMap mapboxMap = null;
+
     private MapStateTracker mapTracker = null;
     private static MapFeature[] mapFeatureState = null;
 
@@ -108,14 +118,91 @@ public class MainActivity extends AppCompatActivity implements
     }
 
     public void setUpMapProperties(Bundle savedInstanceState) {
-        mapView.setStyleUrl(Style.MAPBOX_STREETS);
-        mapTracker.setLastCenterLocation(new LatLng(47.6, -122.3));
-        mapView.setCenterCoordinate(mapTracker.getLastCenterLocation());
-        mapView.setZoomLevel(DATA_ZOOM_LEVEL);
-        mapView.setCompassGravity(Gravity.BOTTOM);
-        mapView.setLogoGravity(Gravity.RIGHT);
         mapView.onCreate(savedInstanceState);
+
+        // when the MapboxMap instance is ready to be used.
+        mapView.getMapAsync(new OnMapReadyCallback() {
+            @Override
+            public void onMapReady(MapboxMap mm) {
+                mapboxMap = mm;
+                mapTracker.setLastCenterLocation(new LatLng(47.6, -122.3));
+                // Initialize camera position
+                CameraPosition position = new CameraPosition.Builder()
+                        .target(mapTracker.getLastCenterLocation())
+                        .zoom(DATA_ZOOM_LEVEL)
+                        .build();
+                mapboxMap.animateCamera(CameraUpdateFactory
+                        .newCameraPosition(position), 1000);
+
+                mapboxMap.setOnCameraChangeListener(new MapboxMap.OnCameraChangeListener() {
+                    @Override
+                    public void onCameraChange(CameraPosition position) {
+                        double currentZoom = mapboxMap.getCameraPosition().zoom;
+                        LatLng centerCoordinate = mapboxMap.getCameraPosition().target;
+                        float computedDistance = computeDistance(centerCoordinate, mapTracker.getLastCenterLocation());
+
+                        // Detects if new data should be loaded on the map, or if data should be removed
+                        if (mapTracker.getLastZoomLevel() >= DATA_ZOOM_LEVEL && currentZoom < DATA_ZOOM_LEVEL) {
+                            MapArtist.clearMap(mapboxMap, mapTracker);
+                        } else if (mapTracker.getLastZoomLevel() < DATA_ZOOM_LEVEL && currentZoom >= DATA_ZOOM_LEVEL) {
+                            loadData();
+                        } else if (computedDistance > CHANGE_DATA_DISTANCE && currentZoom >= DATA_ZOOM_LEVEL) {
+                            mapTracker.setLastCenterLocation(centerCoordinate);
+                            refreshMap();
+                        }
+                        mapTracker.setLastZoomLevel(currentZoom);
+                    }
+                });
+
+                mapboxMap.setOnMyLocationChangeListener(new MapboxMap.OnMyLocationChangeListener() {
+                    @Override
+                    public void onMyLocationChange(@Nullable Location location) {
+                        mapTracker.setUserLastLocation(location);
+                        handleNewLocation(location, false);
+                    }
+                });
+            }
+        });
+
+
     }
+
+        @Override
+        public void onLocationChanged(Location mLastLocation) {
+            mapTracker.setUserLastLocation(mLastLocation);
+            handleNewLocation(mapTracker.getUserLastLocation(), false);
+        }
+
+
+    // new user location detected
+    private void handleNewLocation(Location mLastLocation, boolean center) {
+        if (mapboxMap == null) {
+            return;
+        }
+        Log.i(TAG, "handling new location");
+        double currentLatitude = mLastLocation.getLatitude();
+        double currentLongitude = mLastLocation.getLongitude();
+        LatLng currentPosition = new LatLng(currentLatitude, currentLongitude);
+        if (mapTracker.getUserLocationMarker() != null) {
+            mapboxMap.removeAnnotation(mapTracker.getUserLocationMarker());
+        }
+        mapTracker.setUserLocationMarker(mapboxMap.addMarker(new MarkerOptions()
+                .position(currentPosition)));
+        if (center) {
+            CameraPosition position = new CameraPosition.Builder()
+                    .target(currentPosition)
+                    .zoom(DATA_ZOOM_LEVEL)
+                    .build();
+            mapboxMap.animateCamera(CameraUpdateFactory
+                    .newCameraPosition(position), 7000);
+            mapTracker.setLastCenterLocation(currentPosition);
+
+            if (mapboxMap.getCameraPosition().zoom >= DATA_ZOOM_LEVEL) {
+                refreshMap();
+            }
+        }
+    }
+
 
     // Pulls feature information from string resources
     public void instantiateFeatureTracker(String[] featureResources) {
@@ -128,8 +215,6 @@ public class MainActivity extends AppCompatActivity implements
     }
 
     public void buildUserInterfaceListeners() {
-        mapView.addOnMapChangedListener(handleMapChange);
-
         addressText = (EditText) findViewById(R.id.address_text_bar);
         addressText.setOnClickListener(searchAddress);
 
@@ -167,25 +252,7 @@ public class MainActivity extends AppCompatActivity implements
         closeRouteView.setOnClickListener(closeRouteViewOnCLickListener);
     }
 
-    // Detects if new data should be loaded on the map, or if data should be removed
-    MapView.OnMapChangedListener handleMapChange = new MapView.OnMapChangedListener() {
-        @Override
-        public void onMapChanged(int change) {
-            double currentZoom = mapView.getZoomLevel();
-            LatLng centerCoordinate = mapView.getCenterCoordinate();
-            float computedDistance = computeDistance(centerCoordinate, mapTracker.getLastCenterLocation());
 
-            if (mapTracker.getLastZoomLevel() >= DATA_ZOOM_LEVEL && currentZoom < DATA_ZOOM_LEVEL) {
-                MapArtist.clearMap(mapView, mapTracker);
-            } else if (mapTracker.getLastZoomLevel() < DATA_ZOOM_LEVEL && currentZoom >= DATA_ZOOM_LEVEL) {
-                loadData();
-            } else if (computedDistance > CHANGE_DATA_DISTANCE && currentZoom >= DATA_ZOOM_LEVEL) {
-                mapTracker.setLastCenterLocation(centerCoordinate);
-                refreshMap();
-            }
-            mapTracker.setLastZoomLevel(currentZoom);
-        }
-    };
 
     View.OnClickListener searchAddress = new View.OnClickListener() {
         @Override
@@ -199,11 +266,14 @@ public class MainActivity extends AppCompatActivity implements
     View.OnClickListener zoomInButtonOnClickListener = new View.OnClickListener() {
         @Override
         public void onClick(View arg0) {
-            double currentZoomLevel = mapView.getZoomLevel();
-            // true - animated zoom in
-            mapView.setZoomLevel(Math.min(currentZoomLevel + 1, MapView.MAXIMUM_ZOOM_LEVEL), true);
-            mapTracker.setLastZoomLevel(currentZoomLevel);
-            if (currentZoomLevel >= DATA_ZOOM_LEVEL) {
+            double zoomLevel = Math.min(mapTracker.getLastZoomLevel() + 1, MapboxConstants.MAXIMUM_ZOOM);
+            CameraPosition position = new CameraPosition.Builder()
+                    .target(mapTracker.getLastCenterLocation())
+                    .zoom(zoomLevel)
+                    .build();
+            mapboxMap.animateCamera(CameraUpdateFactory
+                    .newCameraPosition(position), 1000);
+            if (zoomLevel >= DATA_ZOOM_LEVEL) {
                 loadData();
             }
         }
@@ -212,11 +282,15 @@ public class MainActivity extends AppCompatActivity implements
     View.OnClickListener zoomOutButtonOnClickListener = new View.OnClickListener() {
         @Override
         public void onClick(View arg0) {
-            double currentZoomLevel = mapView.getZoomLevel();
-            mapView.setZoomLevel(Math.max(currentZoomLevel - 1, 0), true);  // animated zoom out
-            mapTracker.setLastZoomLevel(currentZoomLevel);
-            if (currentZoomLevel < DATA_ZOOM_LEVEL) {
-                MapArtist.clearMap(mapView, mapTracker);
+            double zoomLevel = Math.max(mapTracker.getLastZoomLevel() - 1, MapboxConstants.MINIMUM_ZOOM);
+            CameraPosition position = new CameraPosition.Builder()
+                    .target(mapTracker.getLastCenterLocation())
+                    .zoom(zoomLevel)
+                    .build();
+            mapboxMap.animateCamera(CameraUpdateFactory
+                    .newCameraPosition(position), 1000);
+            if (zoomLevel < DATA_ZOOM_LEVEL) {
+                MapArtist.clearMap(mapboxMap, mapTracker);
             }
         }
     };
@@ -290,42 +364,22 @@ public class MainActivity extends AppCompatActivity implements
 
     @Override
     public void onConnected(Bundle connectionHint) {
-        Log.i(TAG, "Location services connected.");
-        mapTracker.setUserLastLocation(LocationServices.FusedLocationApi.getLastLocation(
-                mGoogleApiClient));
-        if (mapTracker.getUserLastLocation() == null) {
-            LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, mLocationRequest, this);
-        } else if (mapTracker.isFirstConnection()) {
-            mapTracker.setIsFirstConnection(false);
-            handleNewLocation(mapTracker.getUserLastLocation(), true);
-            loadData();
-        }
-    }
-
-    @Override
-    public void onLocationChanged(Location mLastLocation) {
-        mapTracker.setUserLastLocation(mLastLocation);
-        handleNewLocation(mapTracker.getUserLastLocation(), false);
-    }
-
-    // new user location detected
-    private void handleNewLocation(Location mLastLocation, boolean center) {
-        Log.i(TAG, "handling new location");
-        double currentLatitude = mLastLocation.getLatitude();
-        double currentLongitude = mLastLocation.getLongitude();
-        LatLng currentPosition = new LatLng(currentLatitude, currentLongitude);
-        if (mapTracker.getUserLocationMarker() != null) {
-            mapView.removeAnnotation(mapTracker.getUserLocationMarker());
-        }
-        mapTracker.setUserLocationMarker(mapView.addMarker(new MarkerOptions()
-                .position(currentPosition)));
-        if (center) {
-            mapView.setCenterCoordinate(currentPosition);
-            mapTracker.setLastCenterLocation(currentPosition);
-            if (mapView.getZoomLevel() >= DATA_ZOOM_LEVEL) {
-                refreshMap();
+        // TODO: check permission
+        try {
+            Log.i(TAG, "Location services connected.");
+            mapTracker.setUserLastLocation(LocationServices.FusedLocationApi.getLastLocation(
+                    mGoogleApiClient));
+            if (mapTracker.getUserLastLocation() == null) {
+                LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, mLocationRequest, this);
+            } else if (mapTracker.isFirstConnection()) {
+                mapTracker.setIsFirstConnection(false);
+                handleNewLocation(mapTracker.getUserLastLocation(), true);
+                loadData();
             }
+        } catch (SecurityException e) {
+            e.printStackTrace();
         }
+
     }
 
     @Override
@@ -359,13 +413,11 @@ public class MainActivity extends AppCompatActivity implements
     @Override
     protected void onStart() {
         super.onStart();
-        mapView.onStart();
     }
 
     @Override
     protected void onStop() {
         super.onStop();
-        mapView.onStop();
     }
 
     @Override
@@ -382,25 +434,33 @@ public class MainActivity extends AppCompatActivity implements
         super.onResume();
         mapView.onResume();
         mGoogleApiClient.connect();
-
+        if (mapboxMap == null) {
+            return;
+        }
         if (mapTracker.isHandleAddressOnResume()) {  // search address activity just finished
             try {
                 if (mapTracker.getLastSearchedAddressMarker() != null) {
-                    mapView.removeAnnotation(mapTracker.getLastSearchedAddressMarker());
+                    mapboxMap.removeAnnotation(mapTracker.getLastSearchedAddressMarker());
                 }
                 Address lastSearchedAddress = mapTracker.getLastSearchedAddress();
                 LatLng searchedPosition = DataHelper.extractLatLng(lastSearchedAddress);
                 String textAddress = DataHelper.extractAddressText(lastSearchedAddress);
                 addressText.setText(textAddress);
 
-                mapTracker.setLastSearchedAddressMarker(mapView.addMarker(new MarkerOptions()
+                mapTracker.setLastSearchedAddressMarker(mapboxMap.addMarker(new MarkerOptions()
                         .position(searchedPosition)
                         .title("Searched Address:")
                         .snippet(textAddress)));
 
                 enterSearchDisplay();
 
-                mapView.setCenterCoordinate(searchedPosition);
+                CameraPosition position = new CameraPosition.Builder()
+                        .target(searchedPosition)
+                        .zoom(DATA_ZOOM_LEVEL)
+                        .build();
+                mapboxMap.animateCamera(CameraUpdateFactory
+                        .newCameraPosition(position), 7000);
+
             } catch (IllegalStateException ise) {
                 Toast.makeText(getApplicationContext(),
                         "cannot resolve exact location of searched address",
@@ -521,7 +581,7 @@ public class MainActivity extends AppCompatActivity implements
         RelativeLayout.LayoutParams zib = (RelativeLayout.LayoutParams) zoomInButton.getLayoutParams();
         zib.addRule(RelativeLayout.BELOW, R.id.route_button);
 
-        MapArtist.clearRoute(mapView, mapTracker);
+        MapArtist.clearRoute(mapTracker);
         refreshMap();
     }
 
@@ -539,13 +599,19 @@ public class MainActivity extends AppCompatActivity implements
     // DATA HANDLING FUNCTIONS BELOW
 
     public void refreshMap() {
-        MapArtist.clearMap(mapView, mapTracker);
+        if (mapboxMap == null) {
+            return;
+        }
+        MapArtist.clearMap(mapboxMap, mapTracker);
         loadData();
     }
 
     // loads data for every checked feature
     public void loadData() {
-        String bounds = MapArtist.getDataBounds(mapView.getCenterCoordinate());
+        if (mapboxMap == null) {
+            return;
+        }
+        String bounds = MapArtist.getDataBounds(mapboxMap.getCameraPosition().target);
         String api_url = getString(R.string.api_url);
         for (MapFeature mapFeature : mapFeatureState) {
             if (mapFeature.isVisible()) {
@@ -589,6 +655,9 @@ public class MainActivity extends AppCompatActivity implements
         }
 
         protected void onPostExecute(JSONObject result) {
+            if (mapboxMap == null) {
+                return;
+            }
             if (result == null) {  // server or network error
                 mapTracker.getRoutingDialog().cancel();  // closes spinning "finding route" dialog
                 closeRouteView();
@@ -597,13 +666,13 @@ public class MainActivity extends AppCompatActivity implements
                 try {
                     switch (result.getString("class")) {
                         case "/curbs.geojson":
-                            MapArtist.drawCurbs(mapView, result);
+                            MapArtist.drawCurbs(mapboxMap, result);
                             break;
                         case "/sidewalks.geojson":
-                            MapArtist.drawSidewalks(mapView, result);
+                            MapArtist.drawSidewalks(mapboxMap, result);
                             break;
                         case "/permits.geojson":
-                            MapArtist.drawPermits(mapView, result);
+                            MapArtist.drawPermits(mapboxMap, result);
                             break;
                         case "route.json":
                             mapTracker.setCurrentRoute(MapArtist.extractRoute(result));
@@ -614,7 +683,7 @@ public class MainActivity extends AppCompatActivity implements
                             ArrayAdapter adapter = new ArrayAdapter<String>(getApplicationContext(),
                                     R.layout.custom_list_element, R.id.list_content, routeInfo);
                             routeListView.setAdapter(adapter);
-                            MapArtist.drawRoute(mapView, mapTracker, true);
+                            MapArtist.drawRoute(mapboxMap, mapTracker, true);
                             mapTracker.getRoutingDialog().cancel();
                             break;
                     }

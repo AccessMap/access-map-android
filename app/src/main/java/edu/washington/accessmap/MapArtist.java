@@ -1,15 +1,24 @@
 package edu.washington.accessmap;
 
 import android.graphics.Color;
+import android.graphics.drawable.Drawable;
 import android.location.Address;
 import android.provider.ContactsContract;
+import android.provider.Settings;
+import android.support.v4.content.ContextCompat;
 import android.text.TextUtils;
 import android.util.Log;
 
+import com.mapbox.mapboxsdk.annotations.Icon;
+import com.mapbox.mapboxsdk.annotations.IconFactory;
 import com.mapbox.mapboxsdk.annotations.MarkerOptions;
+import com.mapbox.mapboxsdk.annotations.Polyline;
 import com.mapbox.mapboxsdk.annotations.PolylineOptions;
+import com.mapbox.mapboxsdk.camera.CameraPosition;
+import com.mapbox.mapboxsdk.camera.CameraUpdateFactory;
 import com.mapbox.mapboxsdk.geometry.LatLng;
-import com.mapbox.mapboxsdk.views.MapView;
+import com.mapbox.mapboxsdk.maps.MapView;
+import com.mapbox.mapboxsdk.maps.MapboxMap;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -28,34 +37,35 @@ public class MapArtist {
     public static final String TAG = MapArtist.class.getSimpleName();
 
     // clears annotations from the map except searched and current location
-    public static void clearMap(MapView mapView, MapStateTracker mapTracker) {
-        mapView.removeAllAnnotations();
+    public static void clearMap(MapboxMap mapboxMap, MapStateTracker mapTracker) {
+        System.out.println("Removing all annotations");
+        mapboxMap.removeAnnotations();
 
         if (mapTracker.getUserLocationMarker() != null) {
-            mapView.addMarker(new MarkerOptions()
+            mapboxMap.addMarker(new MarkerOptions()
                     .position(mapTracker.getUserLocationMarker().getPosition())
                     .title("Your Location"));
         }
         if (mapTracker.getLastSearchedAddressMarker() != null) {
-            mapView.addMarker(new MarkerOptions()
+            mapboxMap.addMarker(new MarkerOptions()
                     .position(mapTracker.getLastSearchedAddressMarker().getPosition())
                     .title("Searched Address:")
                     .snippet(DataHelper.extractAddressText(mapTracker.getLastSearchedAddress())));
         }
         if (mapTracker.getCurrentRoute() != null) {
-            MapArtist.drawRoute(mapView, mapTracker, false);
+            MapArtist.drawRoute(mapboxMap, mapTracker, false);
         }
     }
 
 
-    // format = botom left long, bottom left lat, top right long, top right lat
+    // format = bottom left long, bottom left lat, top right long, top right lat
     public static String getDataBounds(LatLng centerCoordinate) {
         double longitude = centerCoordinate.getLongitude();
         double latitude = centerCoordinate.getLatitude();
-        return (longitude - .003) + "," + (latitude - .003) + "," + (longitude + .003) + "," + (latitude + .003);
+        return (longitude - .005) + "," + (latitude - .005) + "," + (longitude + .005) + "," + (latitude + .005);
     }
 
-    public static void drawSidewalks(MapView mapView, JSONObject sidewalkData) {
+    public static void drawSidewalks(MapboxMap mapboxMap, JSONObject sidewalkData) {
         try {
             JSONArray features = sidewalkData.getJSONArray("features");
             List<PolylineOptions> polylines = new ArrayList<PolylineOptions>();
@@ -76,32 +86,34 @@ public class MapArtist {
             }
 
             System.out.println("About to draw sidewalks");
-            mapView.addPolylines(polylines);
+            mapboxMap.addPolylines(polylines);
         } catch (JSONException je) {
             Log.i(TAG, "JSON ERROR");
         }
     }
 
-    public static void drawCurbs(MapView mapView, JSONObject curbData) {
+    public static void drawCurbs(MapboxMap mapboxMap, JSONObject curbData) {
         try {
             JSONArray features = curbData.getJSONArray("features");
             List<MarkerOptions> markers = new ArrayList<MarkerOptions>();
+
             for (int i = 0; i < features.length(); i++) {
                 JSONObject feature = features.getJSONObject(i);
                 JSONObject geometry = feature.getJSONObject("geometry");
                 JSONArray coordinates = geometry.getJSONArray("coordinates");
                 LatLng latlng = new LatLng(coordinates.getDouble(1), coordinates.getDouble(0));
-                markers.add(new MarkerOptions().position(latlng).sprite("circle-11").title("Curb Ramp"));  // "circle-11"
+                // TODO: icon
+                markers.add(new MarkerOptions().position(latlng).title("Curb Ramp"));  // "circle-11"
             }
 
             System.out.println("About to draw curbs");
-            mapView.addMarkers(markers);
+            mapboxMap.addMarkers(markers);
         } catch (JSONException je) {
             Log.i(TAG, "JSON ERROR");
         }
     }
 
-    public static void drawPermits(MapView mapView, JSONObject permitData) {
+    public static void drawPermits(MapboxMap mapboxMap, JSONObject permitData) {
         try {
             JSONArray features = permitData.getJSONArray("features");
             List<MarkerOptions> markers = new ArrayList<MarkerOptions>();
@@ -113,14 +125,14 @@ public class MapArtist {
                 LatLng latlng = new LatLng(coordinates.getDouble(1), coordinates.getDouble(0));
                 markers.add(new MarkerOptions()
                         .position(latlng)
-                        .sprite("zoo-15")
+//                        .sprite("zoo-15")
                         .title("Construction Permit")
                         .snippet("Permit no. " + properties.getInt("permit_no") + "\n"
                                 + "Mobility Impact: " + properties.getString("mobility_impact_text")));
             }
 
             System.out.println("About to draw permits");
-            mapView.addMarkers(markers);
+            mapboxMap.addMarkers(markers);
         } catch (JSONException je) {
             Log.i(TAG, "JSON ERROR");
         }
@@ -157,13 +169,13 @@ public class MapArtist {
         return points;
     }
 
-    public static void drawRoute(MapView mapView, MapStateTracker mapTracker, boolean center) {
+    public static void drawRoute(MapboxMap mapboxMap, MapStateTracker mapTracker, boolean center) {
         ArrayList<LatLng> currentRoute = mapTracker.getCurrentRoute();
         if (currentRoute != null && currentRoute.size() > 0) {
             LatLng[] pointsArray = currentRoute.toArray(new LatLng[currentRoute.size()]);
 
             // Draw Points on MapView
-            mapView.addPolyline(new PolylineOptions()
+            mapboxMap.addPolyline(new PolylineOptions()
                     .add(pointsArray)
                     .color(Color.parseColor("#0000ff"))
                     .width(4));
@@ -176,21 +188,25 @@ public class MapArtist {
         LatLng endLatLng = DataHelper.extractLatLng(end);
 
         if (center) {
-            mapView.setCenterCoordinate(startLatLng);
-            mapView.setZoomLevel(MainActivity.DATA_ZOOM_LEVEL);
+            CameraPosition position = new CameraPosition.Builder()
+                    .target(startLatLng) // Sets the new camera position
+                    .zoom(MainActivity.DATA_ZOOM_LEVEL) // Sets the zoom
+                    .build(); // Creates a CameraPosition from the builder
+            mapboxMap.animateCamera(CameraUpdateFactory
+                    .newCameraPosition(position), 7000);
         }
 
-        mapView.addMarker(new MarkerOptions()
+        mapboxMap.addMarker(new MarkerOptions()
                 .position(startLatLng)
                 .title("Start Address:")
                 .snippet(DataHelper.extractAddressText(start)));
-        mapView.addMarker(new MarkerOptions()
+        mapboxMap.addMarker(new MarkerOptions()
                 .position(endLatLng)
                 .title("End Address:")
                 .snippet(DataHelper.extractAddressText(end)));
     }
 
-    public static void clearRoute(MapView mapView, MapStateTracker mapTracker) {
+    public static void clearRoute(MapStateTracker mapTracker) {
         mapTracker.setCurrentRoute(null);
         mapTracker.setCurrentRouteEnd(null);
         mapTracker.setCurrentRouteStart(null);

@@ -1,19 +1,8 @@
 package edu.washington.accessmap;
 
 import android.location.Address;
-import android.os.AsyncTask;
-import android.util.Log;
 
 import com.mapbox.mapboxsdk.geometry.LatLng;
-import com.mapbox.mapboxsdk.views.MapView;
-
-import org.json.JSONException;
-import org.json.JSONObject;
-
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URL;
 
 /**
  * Created by samuelfelker on 12/5/15.

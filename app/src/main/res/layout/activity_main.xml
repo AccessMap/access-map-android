@@ -7,12 +7,13 @@
     android:layout_height="match_parent" android:fitsSystemWindows="true"
     tools:context=".MainActivity">
 
-    <com.mapbox.mapboxsdk.views.MapView
+    <com.mapbox.mapboxsdk.maps.MapView
         android:id="@+id/mapview"
+        mapbox:style_url="@string/style_mapbox_streets"
         android:layout_width="fill_parent"
         android:layout_height="fill_parent"
-        mapbox:accessToken="@string/accessToken" >
-    </com.mapbox.mapboxsdk.views.MapView>
+        mapbox:access_token="@string/accessToken" >
+    </com.mapbox.mapboxsdk.maps.MapView>
 
     <EditText
         android:id="@+id/address_text_bar"
