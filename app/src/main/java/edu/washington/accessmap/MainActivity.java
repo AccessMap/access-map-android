@@ -15,10 +15,12 @@ import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.design.widget.FloatingActionButton;
 import android.support.v7.app.AppCompatActivity;
+import android.telecom.Call;
 import android.util.Log;
 import android.view.View;
 import android.widget.AdapterView;
@@ -67,7 +69,7 @@ public class MainActivity extends AppCompatActivity implements
     // Shows data overlay only if current zoom level >= DATA_ZOOM_LEVEL
     public static final int DATA_ZOOM_LEVEL = 14;
     // The smallest move in map view to trigger data reload
-    public static final float CHANGE_DATA_DISTANCE = 200;
+    public static final float CHANGE_DATA_DISTANCE = 500;
     public static final String TAG = MainActivity.class.getSimpleName();
 
     // map variables
@@ -138,11 +140,13 @@ public class MainActivity extends AppCompatActivity implements
                     @Override
                     public void onCameraChange(CameraPosition position) {
                         double currentZoom = mapboxMap.getCameraPosition().zoom;
+                        System.out.println("current zoom " + currentZoom);
                         LatLng centerCoordinate = mapboxMap.getCameraPosition().target;
                         float computedDistance = computeDistance(centerCoordinate, mapTracker.getLastCenterLocation());
 
                         // Detects if new data should be loaded on the map, or if data should be removed
                         if (mapTracker.getLastZoomLevel() >= DATA_ZOOM_LEVEL && currentZoom < DATA_ZOOM_LEVEL) {
+//                            new Thread(new MapArtist.ClearMapTask(mapboxMap, mapTracker)).start();
                             MapArtist.clearMap(mapboxMap, mapTracker);
                         } else if (mapTracker.getLastZoomLevel() < DATA_ZOOM_LEVEL && currentZoom >= DATA_ZOOM_LEVEL) {
                             loadData();
@@ -167,11 +171,11 @@ public class MainActivity extends AppCompatActivity implements
 
     }
 
-        @Override
-        public void onLocationChanged(Location mLastLocation) {
-            mapTracker.setUserLastLocation(mLastLocation);
-            handleNewLocation(mapTracker.getUserLastLocation(), false);
-        }
+    @Override
+    public void onLocationChanged(Location mLastLocation) {
+        mapTracker.setUserLastLocation(mLastLocation);
+        handleNewLocation(mapTracker.getUserLastLocation(), false);
+    }
 
 
     // new user location detected
@@ -193,8 +197,9 @@ public class MainActivity extends AppCompatActivity implements
                     .target(currentPosition)
                     .zoom(DATA_ZOOM_LEVEL)
                     .build();
-            mapboxMap.animateCamera(CameraUpdateFactory
-                    .newCameraPosition(position), 7000);
+//            mapboxMap.animateCamera(CameraUpdateFactory
+//                    .newCameraPosition(position), 7000);
+            mapboxMap.setCameraPosition(position);
             mapTracker.setLastCenterLocation(currentPosition);
 
             if (mapboxMap.getCameraPosition().zoom >= DATA_ZOOM_LEVEL) {
@@ -290,6 +295,7 @@ public class MainActivity extends AppCompatActivity implements
             mapboxMap.animateCamera(CameraUpdateFactory
                     .newCameraPosition(position), 1000);
             if (zoomLevel < DATA_ZOOM_LEVEL) {
+//                new Thread(new MapArtist.ClearMapTask(mapboxMap, mapTracker)).start();
                 MapArtist.clearMap(mapboxMap, mapTracker);
             }
         }
@@ -458,8 +464,7 @@ public class MainActivity extends AppCompatActivity implements
                         .target(searchedPosition)
                         .zoom(DATA_ZOOM_LEVEL)
                         .build();
-                mapboxMap.animateCamera(CameraUpdateFactory
-                        .newCameraPosition(position), 7000);
+                mapboxMap.setCameraPosition(position);
 
             } catch (IllegalStateException ise) {
                 Toast.makeText(getApplicationContext(),
@@ -602,6 +607,7 @@ public class MainActivity extends AppCompatActivity implements
         if (mapboxMap == null) {
             return;
         }
+//        new Thread(new MapArtist.ClearMapTask(mapboxMap, mapTracker)).start();
         MapArtist.clearMap(mapboxMap, mapTracker);
         loadData();
     }
@@ -611,12 +617,70 @@ public class MainActivity extends AppCompatActivity implements
         if (mapboxMap == null) {
             return;
         }
-        String bounds = MapArtist.getDataBounds(mapboxMap.getCameraPosition().target);
         String api_url = getString(R.string.api_url);
+        List<String> bounds = MapArtist.getDataBounds(mapboxMap.getCameraPosition().target);
         for (MapFeature mapFeature : mapFeatureState) {
             if (mapFeature.isVisible()) {
-                new CallAccessMapAPI().execute(api_url, mapFeature.getUrl(), bounds);
+                for (String boundStr : bounds) {
+//                    new CallAccessMapAPI().execute(api_url, mapFeature.getUrl(), boundStr);
+                    new Thread(new CallAccessMapAPITask(api_url, mapFeature.getUrl(), boundStr)).start();
+                }
             }
+        }
+    }
+
+
+    private class CallAccessMapAPITask implements Runnable {
+        private String apiUrl;
+        private String featureEndPoint;
+        private String coordinates;
+
+        public CallAccessMapAPITask(String apiUrl, String feature, String bound) {
+            this.apiUrl = apiUrl;
+            this.featureEndPoint = feature;
+            this.coordinates = bound;
+        }
+
+        @Override
+        public void run() {
+            JSONObject result;
+            String urlString = apiUrl + featureEndPoint;
+            // HTTP Get
+            try {
+                long startTime = System.currentTimeMillis();
+
+                String query = "";
+                if (featureEndPoint.equals("route.json")) {
+                    query = String.format("waypoints=%s", coordinates);
+                } else {
+                    query = String.format("bbox=%s", coordinates);
+                }
+                URL url = new URL(urlString + "?" + query);
+                HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
+                BufferedReader in = new BufferedReader( new InputStreamReader(urlConnection.getInputStream()));
+                String inputLine;
+                StringBuilder response = new StringBuilder();
+                while ((inputLine = in.readLine()) != null) {
+                    response.append(inputLine);
+                }
+                in.close();
+                System.out.println("Network takes " + (System.currentTimeMillis() - startTime + "ms"));
+
+                startTime = System.currentTimeMillis();
+//                result = new JSONObject(getResources().getString(R.string.tes_json));
+                result = new JSONObject(response.toString());
+                System.out.println("new JSON takes " + (System.currentTimeMillis() - startTime + "ms"));
+                result.put("class", featureEndPoint);  // track data type in json object
+
+                switch (result.getString("class")) {
+                    case "/sidewalks.geojson":
+                        MapArtist.drawSideWalk(mapboxMap, result);
+                        break;
+                }
+            } catch (Exception e ) {
+                System.out.println(e.getMessage());
+            }
+
         }
     }
 
@@ -630,6 +694,8 @@ public class MainActivity extends AppCompatActivity implements
 
             // HTTP Get
             try {
+                long startTime = System.currentTimeMillis();
+
                 String query = "";
                 if (params[1].equals("route.json")) {
                     query = String.format("waypoints=%s", coordinates);
@@ -640,12 +706,17 @@ public class MainActivity extends AppCompatActivity implements
                 HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
                 BufferedReader in = new BufferedReader( new InputStreamReader(urlConnection.getInputStream()));
                 String inputLine;
-                StringBuffer response = new StringBuffer();
+                StringBuilder response = new StringBuilder();
                 while ((inputLine = in.readLine()) != null) {
                     response.append(inputLine);
                 }
                 in.close();
+                System.out.println("Network takes " + (System.currentTimeMillis() - startTime + "ms"));
+
+                startTime = System.currentTimeMillis();
+//                result = new JSONObject(getResources().getString(R.string.tes_json));
                 result = new JSONObject(response.toString());
+                System.out.println("new JSON takes " + (System.currentTimeMillis() - startTime + "ms"));
                 result.put("class", params[1]);  // track data type in json object
             } catch (Exception e ) {
                 System.out.println(e.getMessage());
@@ -659,33 +730,38 @@ public class MainActivity extends AppCompatActivity implements
                 return;
             }
             if (result == null) {  // server or network error
-                mapTracker.getRoutingDialog().cancel();  // closes spinning "finding route" dialog
-                closeRouteView();
-                Toast.makeText(getApplicationContext(), "A Network error occurred, or no possible route avaliable, please check Network connection", Toast.LENGTH_LONG).show();
+//                mapTracker.getRoutingDialog().cancel();  // closes spinning "finding route" dialog
+//                closeRouteView();
+//                Toast.makeText(getApplicationContext(), "A Network error occurred, or no possible route avaliable, please check Network connection", Toast.LENGTH_LONG).show();
             } else {
                 try {
                     switch (result.getString("class")) {
-                        case "/curbs.geojson":
-                            MapArtist.drawCurbs(mapboxMap, result);
-                            break;
+//                        case "/curbs.geojson":
+//                            MapArtist.drawCurbs(mapboxMap, result);
+//                            break;
                         case "/sidewalks.geojson":
-                            MapArtist.drawSidewalks(mapboxMap, result);
+                            long startTime = System.currentTimeMillis();
+
+//                            new Thread(new MapArtist.DrawSidewalksTask(mapboxMap, result)).start();
+                            MapArtist.drawSideWalk(mapboxMap, result);
+
+//                            System.out.println("Drawing takes " + (System.currentTimeMillis() - startTime) + "ms");
                             break;
-                        case "/permits.geojson":
-                            MapArtist.drawPermits(mapboxMap, result);
-                            break;
-                        case "route.json":
-                            mapTracker.setCurrentRoute(MapArtist.extractRoute(result));
-                            // populate route display
-                            List<String> routeInfo = new ArrayList<String>();
-                            routeInfo.add("From: " + DataHelper.extractAddressText(mapTracker.getCurrentRouteStart()));
-                            routeInfo.add("To: " + DataHelper.extractAddressText(mapTracker.getCurrentRouteEnd()));
-                            ArrayAdapter adapter = new ArrayAdapter<String>(getApplicationContext(),
-                                    R.layout.custom_list_element, R.id.list_content, routeInfo);
-                            routeListView.setAdapter(adapter);
-                            MapArtist.drawRoute(mapboxMap, mapTracker, true);
-                            mapTracker.getRoutingDialog().cancel();
-                            break;
+//                        case "/permits.geojson":
+//                            MapArtist.drawPermits(mapboxMap, result);
+//                            break;
+//                        case "route.json":
+//                            mapTracker.setCurrentRoute(MapArtist.extractRoute(result));
+//                            // populate route display
+//                            List<String> routeInfo = new ArrayList<String>();
+//                            routeInfo.add("From: " + DataHelper.extractAddressText(mapTracker.getCurrentRouteStart()));
+//                            routeInfo.add("To: " + DataHelper.extractAddressText(mapTracker.getCurrentRouteEnd()));
+//                            ArrayAdapter adapter = new ArrayAdapter<String>(getApplicationContext(),
+//                                    R.layout.custom_list_element, R.id.list_content, routeInfo);
+//                            routeListView.setAdapter(adapter);
+//                            MapArtist.drawRoute(mapboxMap, mapTracker, true);
+//                            mapTracker.getRoutingDialog().cancel();
+//                            break;
                     }
                 } catch (JSONException je) {
                     Log.i(TAG, "JSON ERROR");
