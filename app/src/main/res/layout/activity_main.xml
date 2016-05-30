@@ -9,7 +9,7 @@
 
     <com.mapbox.mapboxsdk.maps.MapView
         android:id="@+id/mapview"
-        mapbox:style_url="@string/style_mapbox_streets"
+        mapbox:style_url="mapbox://styles/noname01/cion98j9t001rapnkkl86yiey"
         android:layout_width="fill_parent"
         android:layout_height="fill_parent"
         mapbox:access_token="@string/accessToken" >
@@ -29,7 +29,7 @@
         android:id="@+id/close_search_display"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="top|right"
+        android:layout_gravity="top|end"
         app:layout_anchor="@id/address_text_bar"
         app:layout_anchorGravity="top|right|end"
         android:tint="#5c85d6"
@@ -54,7 +54,7 @@
         android:id="@+id/close_routing_display"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="top|right"
+        android:layout_gravity="top|end"
         app:layout_anchor="@id/address_text_bar"
         app:layout_anchorGravity="top|right|end"
         android:tint="#5c85d6"
