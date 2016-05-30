@@ -79,6 +79,8 @@ public class MainActivity extends AppCompatActivity implements
     private MapStateTracker mapTracker = null;
     private static MapFeature[] mapFeatureState = null;
 
+    private String currentView = "main";
+
     // ui elements
     private EditText addressText = null;
     private FloatingActionButton closeSearchDisplayButton = null;
@@ -176,6 +178,17 @@ public class MainActivity extends AppCompatActivity implements
         handleNewLocation(mapTracker.getUserLastLocation(), false);
     }
 
+    @Override
+    public void onBackPressed() {
+        if (currentView.equals("main")) {
+            super.onBackPressed();
+            return;
+        }
+        closeRouteView();
+        closeSearchDisplay();
+        handleNewLocation(mapTracker.getUserLastLocation(), true);
+    }
+
 
     // new user location detected
     private void handleNewLocation(Location mLastLocation, boolean center) {
@@ -219,9 +232,6 @@ public class MainActivity extends AppCompatActivity implements
         addressText = (EditText) findViewById(R.id.address_text_bar);
         addressText.setOnClickListener(searchAddress);
 
-        closeSearchDisplayButton = (FloatingActionButton) findViewById(R.id.close_search_display);
-        closeSearchDisplayButton.setOnClickListener(closeSearchDisplayButtonOnCLickListener);
-
         centerUserLocationButton = (ImageButton) findViewById(R.id.center_user_location_button);
         centerUserLocationButton.setOnClickListener(centerOnUserLocationButtonOnClickListener);
 
@@ -248,9 +258,6 @@ public class MainActivity extends AppCompatActivity implements
                 MainActivity.this.startActivityForResult(routeSearch, 2);
             }
         });
-
-        closeRouteView = (FloatingActionButton) findViewById(R.id.close_routing_display);
-        closeRouteView.setOnClickListener(closeRouteViewOnCLickListener);
     }
 
 
@@ -468,7 +475,6 @@ public class MainActivity extends AppCompatActivity implements
             }
             mapTracker.setHandleAddressOnResume(false);
         }
-//        MapArtist.cl
     }
 
     @Override
@@ -558,10 +564,10 @@ public class MainActivity extends AppCompatActivity implements
     }
 
     private void enterRouteView() {
+        currentView = "route";
         addressText.setVisibility(View.GONE);
         routeButton.setVisibility(View.GONE);
         routeListView.setVisibility(View.VISIBLE);
-        closeRouteView.setVisibility(View.VISIBLE);
 
         RelativeLayout.LayoutParams culb = (RelativeLayout.LayoutParams) centerUserLocationButton.getLayoutParams();
         culb.addRule(RelativeLayout.BELOW, R.id.list_view);
@@ -571,10 +577,10 @@ public class MainActivity extends AppCompatActivity implements
     }
 
     private void closeRouteView() {
+        currentView = "main";
         addressText.setVisibility(View.VISIBLE);
         routeButton.setVisibility(View.VISIBLE);
         routeListView.setVisibility(View.GONE);
-        closeRouteView.setVisibility(View.GONE);
 
         RelativeLayout.LayoutParams culb = (RelativeLayout.LayoutParams) centerUserLocationButton.getLayoutParams();
         culb.addRule(RelativeLayout.BELOW, R.id.address_text_bar);
@@ -587,11 +593,11 @@ public class MainActivity extends AppCompatActivity implements
     }
 
     private void enterSearchDisplay() {
-        closeSearchDisplayButton.setVisibility(View.VISIBLE);
+        currentView = "search";
     }
 
     private void closeSearchDisplay() {
-        closeSearchDisplayButton.setVisibility(View.GONE);
+        currentView = "main";
         addressText.setText("");
         mapTracker.setLastSearchedAddressMarker(null); // to prevent drawing
         refreshMap();

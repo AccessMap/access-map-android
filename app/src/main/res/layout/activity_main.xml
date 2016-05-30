@@ -25,21 +25,6 @@
         android:focusable="false"
         android:hint="search for a location"/>
 
-    <android.support.design.widget.FloatingActionButton
-        android:id="@+id/close_search_display"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top|end"
-        app:layout_anchor="@id/address_text_bar"
-        app:layout_anchorGravity="top|right|end"
-        android:tint="#5c85d6"
-        android:layout_above="@+id/center_user_location_button"
-        android:layout_alignRight="@+id/address_text_bar"
-        android:layout_alignEnd="@+id/address_text_bar"
-        android:layout_marginTop="20dp"
-        android:background="@drawable/x"
-        android:visibility="gone"/>
-
     <ListView
         android:layout_width="wrap_content"
         android:layout_height="60dp"
@@ -48,21 +33,6 @@
         android:layout_alignParentRight="true"
         android:layout_alignParentEnd="true"
         android:background="#ffffff"
-        android:visibility="gone"/>
-
-    <android.support.design.widget.FloatingActionButton
-        android:id="@+id/close_routing_display"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top|end"
-        app:layout_anchor="@id/address_text_bar"
-        app:layout_anchorGravity="top|right|end"
-        android:tint="#5c85d6"
-        android:layout_above="@+id/center_user_location_button"
-        android:layout_alignRight="@+id/list_view"
-        android:layout_alignEnd="@+id/list_view"
-        android:layout_marginTop="20dp"
-        android:background="@drawable/x"
         android:visibility="gone"/>
 
     <ImageButton android:id="@+id/center_user_location_button"
