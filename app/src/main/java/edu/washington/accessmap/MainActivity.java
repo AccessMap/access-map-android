@@ -10,6 +10,7 @@ import android.content.Intent;
 import android.content.IntentSender;
 import android.content.res.Resources;
 import android.location.Address;
+import android.location.Geocoder;
 import android.location.Location;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
@@ -45,11 +46,13 @@ import com.mapbox.mapboxsdk.geometry.LatLng;
 import com.mapbox.mapboxsdk.maps.MapView;
 import com.mapbox.mapboxsdk.maps.MapboxMap;
 import com.mapbox.mapboxsdk.maps.OnMapReadyCallback;
+import com.mapbox.mapboxsdk.maps.widgets.CompassView;
 
 import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -80,6 +83,7 @@ public class MainActivity extends AppCompatActivity implements
     private static MapFeature[] mapFeatureState = null;
 
     private String currentView = "main";
+    private Geocoder geocoder = null;
 
     // ui elements
     private EditText addressText = null;
@@ -106,6 +110,7 @@ public class MainActivity extends AppCompatActivity implements
         // Instantiate MapView and properties
         mapTracker = new MapStateTracker();
         mapView = (MapView) findViewById(R.id.mapview);
+        geocoder = new Geocoder(this, Locale.ENGLISH);
         setUpMapProperties(savedInstanceState);
 
         // Instantiate Map Feature Tracker
@@ -155,6 +160,21 @@ public class MainActivity extends AppCompatActivity implements
                             refreshMap();
                         }
                         mapTracker.setLastZoomLevel(currentZoom);
+                    }
+                });
+
+                mapboxMap.setOnMapLongClickListener(new MapboxMap.OnMapLongClickListener() {
+                    @Override
+                    public void onMapLongClick(@NonNull LatLng point) {
+                        try {
+                            System.out.println(point);
+                            Address addr = geocoder.getFromLocation(point.getLatitude(), point.getLongitude(), 1).get(0);
+                            mapTracker.setLastSearchedAddress(addr);
+                            mapTracker.setHandleAddressOnResume(true);
+                            onResume();
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
                     }
                 });
 
@@ -457,16 +477,16 @@ public class MainActivity extends AppCompatActivity implements
 
                 mapTracker.setLastSearchedAddressMarker(mapboxMap.addMarker(new MarkerOptions()
                         .position(searchedPosition)
-                        .title("Searched Address:")
+                        .title("Selected Address:")
                         .snippet(textAddress)));
 
                 enterSearchDisplay();
 
                 CameraPosition position = new CameraPosition.Builder()
                         .target(searchedPosition)
-                        .zoom(DATA_ZOOM_LEVEL)
                         .build();
-                mapboxMap.setCameraPosition(position);
+                mapboxMap.animateCamera(CameraUpdateFactory
+                        .newCameraPosition(position), 1000);
 
             } catch (IllegalStateException ise) {
                 Toast.makeText(getApplicationContext(),
