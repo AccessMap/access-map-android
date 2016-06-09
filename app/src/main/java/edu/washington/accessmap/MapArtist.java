@@ -1,23 +1,14 @@
 package edu.washington.accessmap;
 
 import android.graphics.Color;
-import android.graphics.drawable.Drawable;
 import android.location.Address;
-import android.provider.ContactsContract;
-import android.provider.Settings;
-import android.support.v4.content.ContextCompat;
 import android.text.TextUtils;
-import android.util.Log;
 
-import com.mapbox.mapboxsdk.annotations.Icon;
-import com.mapbox.mapboxsdk.annotations.IconFactory;
 import com.mapbox.mapboxsdk.annotations.MarkerOptions;
-import com.mapbox.mapboxsdk.annotations.Polyline;
 import com.mapbox.mapboxsdk.annotations.PolylineOptions;
 import com.mapbox.mapboxsdk.camera.CameraPosition;
 import com.mapbox.mapboxsdk.camera.CameraUpdateFactory;
 import com.mapbox.mapboxsdk.geometry.LatLng;
-import com.mapbox.mapboxsdk.maps.MapView;
 import com.mapbox.mapboxsdk.maps.MapboxMap;
 
 import org.json.JSONArray;

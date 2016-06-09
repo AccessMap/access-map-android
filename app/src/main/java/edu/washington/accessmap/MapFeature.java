@@ -3,8 +3,6 @@ package edu.washington.accessmap;
 import android.os.Parcel;
 import android.os.Parcelable;
 
-import java.util.Map;
-
 /**
  * Created by samuelfelker on 11/19/15.
  */

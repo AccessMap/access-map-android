@@ -5,11 +5,9 @@ import android.location.Address;
 import android.location.Location;
 
 import com.mapbox.mapboxsdk.annotations.Marker;
-import com.mapbox.mapboxsdk.annotations.PolylineOptions;
 import com.mapbox.mapboxsdk.geometry.LatLng;
 
 import java.util.ArrayList;
-import java.util.List;
 
 /**
  * Created by samuelfelker on 12/4/15.
